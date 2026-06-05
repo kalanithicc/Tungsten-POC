@@ -54,7 +54,13 @@ public without sharing class CaseResolutionController {
         'sorry, can you',
         'sorry, i didn\'t',
         'sorry, i did not',
-        'no answer found in the knowledge base'
+        'no answer found in the knowledge base',
+        'no relevant information was found in the knowledge base',
+        'not available in the current knowledge base',
+        'does not contain sufficient information',
+        'knowledge base does not contain',
+        'not contain information to answer',
+        'outside the scope of available knowledge'
     };
 
     private static final Set<String> LOW_QUALITY_RESPONSES = new Set<String>{
@@ -204,9 +210,8 @@ public without sharing class CaseResolutionController {
         if (LOW_QUALITY_RESPONSES.contains(normalized)) {
             return true;
         }
-        if (normalized.length() > 150) {
-            return false;
-        }
+        // Always check LOW_QUALITY_CONTAINS regardless of length —
+        // fallback messages from the agent system prompt can be long sentences.
         for (String fragment : LOW_QUALITY_CONTAINS) {
             if (normalized.contains(fragment)) {
                 return true;

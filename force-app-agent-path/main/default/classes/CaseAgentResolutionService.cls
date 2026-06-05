@@ -26,7 +26,7 @@ public without sharing class CaseAgentResolutionService implements Queueable, Da
         try {
             ccai.AIAgenticWebService.RequestWrapper request = new ccai.AIAgenticWebService.RequestWrapper();
             request.agentName   = AGENT_DEVELOPER_NAME;
-            request.userMessage = subject;
+            request.userMessage = cleanSubject(subject);
 
             ccai.AIAgenticWebService.ResponseWrapper response = ccai.AIAgenticUtility.invokeAgent(request);
 
@@ -50,6 +50,15 @@ public without sharing class CaseAgentResolutionService implements Queueable, Da
                 ' | Stack: ' + e.getStackTraceString()
             );
         }
+    }
+
+    private static String cleanSubject(String raw) {
+        if (String.isBlank(raw)) {
+            return raw;
+        }
+        // Remove surrounding quotes that users sometimes paste from chat/docs,
+        // and strip leading/trailing whitespace — both hurt RAG similarity scoring.
+        return raw.replaceAll('^[\\s"\']+|[\\s"\']+$', '').trim();
     }
 
     private static String stripHtml(String raw) {

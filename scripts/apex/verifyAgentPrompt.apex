@@ -1,0 +1,1 @@
+ccai__AI_Agent__c a = [SELECT ccai__system_prompt__c FROM ccai__AI_Agent__c WHERE ccai__developer_name__c = 'Case_Resolve_Agent' LIMIT 1]; System.debug('PROMPT: ' + a.ccai__system_prompt__c);
