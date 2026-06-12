@@ -59,6 +59,12 @@ export default class CaseResolutionAssistant extends LightningElement {
     pollAttempts = 0;
     pollTimeoutId = null;
 
+    // Speech-to-text
+    isListening = false;
+    interimTranscript = '';
+    micError = '';
+    _speechRecognition = null;
+
     @wire(getProductOptions)
     wiredProducts({ data }) {
         if (data) {
@@ -343,6 +349,8 @@ export default class CaseResolutionAssistant extends LightningElement {
             clearTimeout(this.pollTimeoutId);
             this.pollTimeoutId = null;
         }
+        this._stopListening();
+        this.micError = '';
         this.currentState = STATE.INPUT;
 
         // Force-clear DOM input/textarea/select values because LWC does not
@@ -353,10 +361,109 @@ export default class CaseResolutionAssistant extends LightningElement {
         });
     }
 
+    get micButtonClass() {
+        return this.isListening
+            ? 'cra-mic-btn cra-mic-btn--listening'
+            : 'cra-mic-btn';
+    }
+
+    get micAriaLabel() {
+        return this.isListening ? 'Stop recording' : 'Start voice input';
+    }
+
+    handleMicToggle() {
+        if (this.isListening) {
+            this._stopListening();
+        } else {
+            this._startListening();
+        }
+    }
+
+    _startListening() {
+        // eslint-disable-next-line no-undef
+        const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+        if (!SpeechRecognition) {
+            this.micError =
+                'Voice input is not supported in this browser. Please use Google Chrome for this feature.';
+            return;
+        }
+
+        this.micError = '';
+        this._speechRecognition = new SpeechRecognition();
+        this._speechRecognition.continuous = true;
+        this._speechRecognition.interimResults = true;
+        this._speechRecognition.lang = 'en-US';
+
+        this._speechRecognition.onstart = () => {
+            this.isListening = true;
+            this.interimTranscript = '';
+        };
+
+        this._speechRecognition.onresult = (event) => {
+            let interim = '';
+            for (let i = event.resultIndex; i < event.results.length; i++) {
+                const transcript = event.results[i][0].transcript;
+                if (event.results[i].isFinal) {
+                    const spacer = this.question.trim() ? ' ' : '';
+                    this.question = (this.question.trim() + spacer + transcript.trim()).trim();
+                    if (this.questionError) this.questionError = '';
+                    if (this.questionHint && !this.isQuestionThin()) this.questionHint = '';
+                } else {
+                    interim += transcript;
+                }
+            }
+            this.interimTranscript = interim;
+            // Directly sync to textarea DOM — LWC reactive props don't always
+            // update native textarea value in real-time from browser callbacks.
+            // LWC scopes element IDs, so select by tag name only.
+            // Show committed text + live interim words together.
+            const textarea = this.template.querySelector('textarea');
+            if (textarea) {
+                const spacer = this.question.trim() && interim ? ' ' : '';
+                textarea.value = this.question + spacer + interim;
+            }
+        };
+
+        this._speechRecognition.onerror = (event) => {
+            this.isListening = false;
+            this.interimTranscript = '';
+            if (event.error === 'not-allowed' || event.error === 'permission-denied') {
+                this.micError =
+                    'Microphone access denied. Please allow microphone permission in your browser and try again.';
+            }
+        };
+
+        this._speechRecognition.onend = () => {
+            this.isListening = false;
+            this.interimTranscript = '';
+            // Ensure textarea shows only the committed text after recording ends
+            const textarea = this.template.querySelector('textarea');
+            if (textarea) {
+                textarea.value = this.question;
+            }
+        };
+
+        try {
+            this._speechRecognition.start();
+        } catch (e) {
+            this.isListening = false;
+        }
+    }
+
+    _stopListening() {
+        if (this._speechRecognition) {
+            this._speechRecognition.stop();
+            this._speechRecognition = null;
+        }
+        this.isListening = false;
+        this.interimTranscript = '';
+    }
+
     disconnectedCallback() {
         if (this.pollTimeoutId) {
             clearTimeout(this.pollTimeoutId);
             this.pollTimeoutId = null;
         }
+        this._stopListening();
     }
 }

@@ -89,17 +89,43 @@
                     <label class="cra-label" for="question">
                         Your Question <span class="cra-required" aria-hidden="true">*</span>
                     </label>
-                    <textarea
-                        class={questionInputClass}
-                        id="question"
-                        value={question}
-                        onchange={handleQuestionChange}
-                        oninput={handleQuestionChange}
-                        onblur={handleQuestionBlur}
-                        required
-                        aria-required="true"
-                        aria-invalid={questionError}
-                        placeholder="Describe what you need help with..."></textarea>
+                    <div class="cra-textarea-wrapper">
+                        <textarea
+                            class={questionInputClass}
+                            id="question"
+                            value={question}
+                            onchange={handleQuestionChange}
+                            oninput={handleQuestionChange}
+                            onblur={handleQuestionBlur}
+                            required
+                            aria-required="true"
+                            aria-invalid={questionError}
+                            placeholder="Describe what you need help with..."></textarea>
+                        <button
+                            class={micButtonClass}
+                            type="button"
+                            onclick={handleMicToggle}
+                            aria-label={micAriaLabel}
+                            title={micAriaLabel}>
+                            <template if:true={isListening}>
+                                <span class="cra-mic-dot" aria-hidden="true"></span>
+                            </template>
+                            <template if:false={isListening}>
+                                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" width="18" height="18">
+                                    <path d="M12 1a4 4 0 0 1 4 4v6a4 4 0 0 1-8 0V5a4 4 0 0 1 4-4zm0 2a2 2 0 0 0-2 2v6a2 2 0 0 0 4 0V5a2 2 0 0 0-2-2zM7 12a1 1 0 0 1 1 1 4 4 0 0 0 8 0 1 1 0 1 1 2 0 6 6 0 0 1-5 5.917V21h2a1 1 0 1 1 0 2H9a1 1 0 1 1 0-2h2v-2.083A6 6 0 0 1 6 13a1 1 0 0 1 1-1z"/>
+                                </svg>
+                            </template>
+                        </button>
+                    </div>
+                    <template if:true={isListening}>
+                        <div class="cra-mic-status" aria-live="polite">
+                            <span class="cra-mic-pulse" aria-hidden="true"></span>
+                            <span>Listening — speak now</span>
+                        </div>
+                    </template>
+                    <template if:true={micError}>
+                        <p class="cra-field-error" role="alert">{micError}</p>
+                    </template>
                     <template if:true={questionError}>
                         <p class="cra-field-error" role="alert">{questionError}</p>
                     </template>

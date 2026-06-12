@@ -3,8 +3,8 @@
 | Field | Value |
 |-------|-------|
 | **Project** | GPTfy POC1 (Tungsten Automation – Use Case 2) |
-| **Status** | In Progress – Parts 1 & 2 complete, Part 3 (AI KB Generation) complete |
-| **Last updated** | 2026-06-08 |
+| **Status** | In Progress – Parts 1, 2 & 3 complete, Part 4 (Speech-to-Text) complete |
+| **Last updated** | 2026-06-12 |
 | **GitHub repo** | https://github.com/K7-CC/GPTFY-POC1 |
 | **Salesforce org** | `gptfy-poc1` (`kesavpoc@gptfy.com`) |
 | **Latest checkpoint** | `Part-1` (tag) · latest commit `4a5a27a` |
@@ -74,6 +74,7 @@ Both paths write the answer to the same field; the LWC polling loop and downstre
 **Steps (guest journey):**
 
 1. Guest enters first name, last name, email, product (dynamic picklist from org), and question.
+   - Guest can also **speak** their question using the mic icon inside the question textarea (see 4.10).
 2. Guest clicks submit → a Case is created with `Origin = Web`.
 3. Screen shows "loading" while AI works (polls up to 36 times, every 2.5 s → 90 s total).
 4. AI answer appears in `Case.Description` (via PATH 1 or PATH 2, both write the same field).
@@ -438,6 +439,52 @@ Test records use marker `cursor-test-{timestamp}` in Subject for easy cleanup.
 
 ---
 
+### 4.10 Speech-to-text input on guest portal (NEW – Part 4)
+
+**What it does:** A microphone icon sits inside the bottom-right corner of the "Your Question" textarea. Guests can tap it to speak their issue instead of typing, allowing them to describe problems more elaborately and naturally. Voice input produces richer, more detailed questions, which leads to better AI matching against the knowledge base.
+
+**How it works:**
+
+1. Guest clicks the mic icon → browser requests microphone permission (one-time).
+2. Icon turns into a pulsing red dot; a `● Listening — speak now` bar appears below the textarea.
+3. Words appear **live in the textarea** as the guest speaks — interim phrases show in real-time and are committed when a phrase is finalised.
+4. Click the icon again (or pause speaking) to stop recording.
+5. Transcript is **appended** to any text already typed — never replaces existing content.
+6. Guest can then click **Find a Solution** as normal with the spoken text as the question.
+
+**Browser support:**
+
+| Browser | Behaviour |
+|---------|-----------|
+| Chrome / Edge | Full speech-to-text (Web Speech API) |
+| Firefox / Safari | Mic icon still appears; clicking shows "not supported" error inline |
+
+**Error handling:**
+
+| Scenario | Response |
+|----------|----------|
+| Microphone permission denied | Inline red error below the textarea |
+| Browser does not support Web Speech API | Inline error message on click |
+| Component destroyed while recording | Recognition stopped in `disconnectedCallback` |
+
+**Technical implementation notes:**
+
+- Uses `window.SpeechRecognition || window.webkitSpeechRecognition` (Chrome built-in, no external API calls)
+- `continuous: true` — keeps recording across natural pauses; user speaks in chunks
+- `interimResults: true` — interim words pushed to textarea DOM directly (bypasses LWC reactivity lag via `this.template.querySelector('textarea')`)
+- LWC scopes element IDs in shadow DOM — selector uses tag name (`'textarea'`), not ID
+- Capability check deferred to click time (not `connectedCallback`) for Lightning Web Security (LWS) compatibility on Experience Cloud LWR
+
+**Technical pieces:**
+
+| Piece | Location |
+|-------|----------|
+| LWC HTML (mic icon, listening bar) | `force-app/main/default/lwc/caseResolutionAssistant/caseResolutionAssistant.html` |
+| LWC JS (SpeechRecognition logic) | `force-app/main/default/lwc/caseResolutionAssistant/caseResolutionAssistant.js` |
+| LWC CSS (icon, pulse animation) | `force-app/main/default/lwc/caseResolutionAssistant/caseResolutionAssistant.css` |
+
+---
+
 ## 9. Pending work
 
 See `POC_CHECKLIST.md` for full checklist. High-priority items:
@@ -451,6 +498,7 @@ See `POC_CHECKLIST.md` for full checklist. High-priority items:
 
 **Completed (removed from pending):**
 - ~~GPTfy KB drafting prompt~~ — Done: KB Creation Prompt (`docs/KB Creation Prompt`) with KCS-compliant 6-article generation pipeline (`KbCreationService` + `KbArticleBuilderAction`)
+- ~~Speech-to-text input~~ — Done: mic icon in question textarea using Web Speech API (see 4.10)
 
 ---
 
@@ -476,9 +524,12 @@ git checkout Part-1
 <!-- CHANGELOG_START -->
 | Date | Commit | Tag | Summary |
 |------|--------|-----|---------|
-| 2026-06-08 | -       | -      | Part 3: AI KB generation pipeline — KbCreationService, KbArticleBuilderAction, KB Creation Prompt, updated CaseResolveActionController + LWC |
+| 2026-06-12 | `8c099b9` | - | Store KB candidates on Case.KB_Candidates__c instead of KB_Prompt_Context__c |
+| 2026-06-12 | `186d0dc` | checkpoint-4 | checkpoint 4: KB candidate search, CREATE/UPDATE upsert, and chained prompt fix |
+| 2026-06-08 | `804ab11` | Part-3 | checkpoint: Part 3 - AI-powered KB generation pipeline |
+| 2026-06-05 | `9c31a05` | - | docs: update PRD and project walkthrough to reflect Part 2 (Agent/RAG path) |
 | 2026-06-05 | `4a5a27a` | - | checkpoint: agent resolution service updates and apex utility scripts |
-| 2026-06-04 | `eeb14d3` | - | checkpoint: agent-path trigger, KB data expansion, and case resolution improvements |
+| 2026-06-04 | `eeb14d3` | checkpoint-2 | checkpoint: agent-path trigger, KB data expansion, and case resolution improvements |
 | 2026-06-04 | `67f4b0d` | - | checkpoint: case resolution assistant, KB pipeline, and support site |
 | 2026-06-03 | `a419e45` | - | docs: fix PRD changelog script and refresh commit log |
 | 2026-06-03 | `ae3cde5` | - | docs: add living PRD with auto-updated changelog |
@@ -542,7 +593,22 @@ git checkout Part-1
 
 ---
 
-<!-- Add Part 4, etc. below as milestones are reached -->
+### Part 4 – Speech-to-Text Input (2026-06-12)
+
+**Delivered:**
+- Mic icon embedded inside the "Your Question" textarea (bottom-right, positioned with CSS `absolute`)
+- Chrome Web Speech API integration: `continuous: true`, `interimResults: true`
+- Live word-by-word transcript directly in the textarea DOM (bypasses LWC reactivity lag)
+- Append-only behaviour — typed text is never replaced by speech
+- Pulsing red dot icon + `● Listening — speak now` status bar when recording
+- Graceful fallback: capability check at click time (not load time) for LWS compatibility; unsupported browsers get inline error
+- `disconnectedCallback` cleanup — recognition stopped if component unmounts mid-recording
+
+**Status:** Complete and verified in `gptfy-poc1` org.
+
+---
+
+<!-- Add Part 5, etc. below as milestones are reached -->
 
 ---
 
