@@ -4,6 +4,8 @@
         style="background-color: #2c5282; min-height: 100vh; width: 100%; box-sizing: border-box; padding: 2rem 1rem;">
     <div class="cra-container">
 
+        <div class={sessionBannerClass} role="status">{sessionDisplayLabel}</div>
+
         <div class={inputClass}>
             <div class="cra-header">
                 <h2 class="cra-title">How can we help you today?</h2>
@@ -53,17 +55,26 @@
                     </div>
                 </div>
                 <div class="cra-field">
-                    <label class="cra-label" for="product">Product</label>
+                    <label class="cra-label" for="product">
+                        Product <span class="cra-required" aria-hidden="true">*</span>
+                    </label>
                     <select
-                        class="cra-input cra-select"
+                        class={productInputClass}
                         id="product"
                         value={product}
-                        onchange={handleProductChange}>
-                        <option value="">-- Select a product (optional) --</option>
+                        onchange={handleProductChange}
+                        onblur={handleProductBlur}
+                        required
+                        aria-required="true"
+                        aria-invalid={productError}>
+                        <option value="">-- Select a product --</option>
                         <template for:each={productOptions} for:item="opt">
                             <option key={opt.value} value={opt.value}>{opt.label}</option>
                         </template>
                     </select>
+                    <template if:true={productError}>
+                        <p class="cra-field-error" role="alert">{productError}</p>
+                    </template>
                 </div>
                 <div class="cra-field">
                     <label class="cra-label" for="email">
@@ -89,6 +100,12 @@
                     <label class="cra-label" for="question">
                         Your Question <span class="cra-required" aria-hidden="true">*</span>
                     </label>
+                    <template if:true={showMicHint}>
+                        <div class="cra-voice-hint" role="note">
+                            <span class="cra-voice-hint-icon">🎤</span>
+                            <span>Prefer to speak? Click the <strong>blue mic button</strong> inside the text box to describe your issue by voice — no typing needed.</span>
+                        </div>
+                    </template>
                     <div class="cra-textarea-wrapper">
                         <textarea
                             class={questionInputClass}
@@ -132,9 +149,87 @@
                     <div class={questionHintClass} role="alert">{questionHint}</div>
                 </div>
                 <div class={errorClass}>{errorMessage}</div>
-                <button class="cra-button cra-button--primary" onclick={handleFindSolution}>
-                    Find a Solution
+                <button class="cra-button cra-button--primary" onclick={handleSubmit}>
+                    Submit
                 </button>
+            </div>
+        </div>
+
+        <div class={clarifyingClass}>
+            <div class="cra-loading">
+                <div class="cra-spinner"></div>
+                <p class="cra-loading-text">Understanding your question...</p>
+                <p class="cra-loading-subtext">We're refining it for the best results.</p>
+            </div>
+        </div>
+
+        <div class={clarificationClass}>
+            <div class="cra-header">
+                <h2 class="cra-title">Confirm your question</h2>
+                <p class="cra-subtitle">We've cleaned up your question. Edit it if needed, answer any quick questions below, then confirm.</p>
+            </div>
+            <div class="cra-form">
+                <div class={clarifyWarningClass} role="alert">{clarifyWarningMessage}</div>
+                <div class="cra-field">
+                    <label class="cra-label" for="clarifiedQuestion">Your Question</label>
+                    <textarea
+                        class="cra-input cra-textarea"
+                        id="clarifiedQuestion"
+                        data-id="clarifiedQuestion"
+                        value={clarifiedQuestion}
+                        oninput={handleClarifiedQuestionChange}
+                        onchange={handleClarifiedQuestionChange}></textarea>
+                </div>
+                <template if:true={hasClarifications}>
+                    <div class="cra-clar-section">
+                        <p class="cra-clar-heading">A few quick questions to help us find the best answer:</p>
+                        <template for:each={clarifications} for:item="clar">
+                            <div key={clar.id} class="cra-clar-group">
+                                <p class="cra-clar-question">{clar.question}</p>
+                                <div class="cra-clar-options">
+                                    <template for:each={clar.options} for:item="opt">
+                                        <label key={opt.id} class="cra-clar-option">
+                                            <input
+                                                type="checkbox"
+                                                data-clar-id={clar.id}
+                                                data-opt-id={opt.id}
+                                                checked={opt.selected}
+                                                onchange={handleOptionChange} />
+                                            <span>{opt.text}</span>
+                                        </label>
+                                    </template>
+                                    <label class="cra-clar-option">
+                                        <input
+                                            type="checkbox"
+                                            data-clar-id={clar.id}
+                                            data-is-other="true"
+                                            checked={clar.showOther}
+                                            onchange={handleOtherToggle} />
+                                        <span>Other</span>
+                                    </label>
+                                </div>
+                                <template if:true={clar.showOther}>
+                                    <input
+                                        type="text"
+                                        class="cra-input cra-clar-other-input"
+                                        placeholder="Please specify..."
+                                        data-clar-id={clar.id}
+                                        value={clar.otherText}
+                                        oninput={handleOtherTextChange} />
+                                </template>
+                            </div>
+                        </template>
+                    </div>
+                </template>
+                <div class={errorClass}>{errorMessage}</div>
+                <div class="cra-button-row">
+                    <button class="cra-button cra-button--secondary" onclick={handleBackToInput}>
+                        Back
+                    </button>
+                    <button class="cra-button cra-button--primary" onclick={handleConfirm}>
+                        Confirm &amp; Find Solution
+                    </button>
+                </div>
             </div>
         </div>
 

@@ -1,1 +1,0 @@
-Map<String, Schema.SObjectField> flds = Schema.SObjectType.ccai__AI_Agent__c.fields.getMap(); List<String> names = new List<String>(flds.keySet()); names.sort(); for(String f : names) { System.debug(f); }

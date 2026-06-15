@@ -1,8 +1,11 @@
-import { LightningElement, api } from 'lwc';
+import { LightningElement, api, wire } from 'lwc';
 import { CloseActionScreenEvent } from 'lightning/actions';
 import { ShowToastEvent } from 'lightning/platformShowToastEvent';
-import { getRecordNotifyChange } from 'lightning/uiRecordApi';
+import { getRecordNotifyChange, getRecord } from 'lightning/uiRecordApi';
+import STATUS_FIELD from '@salesforce/schema/Case.Status';
 import saveResolution from '@salesforce/apex/CaseResolveActionController.saveResolution';
+
+const FIELDS = [STATUS_FIELD];
 
 export default class CaseResolveAction extends LightningElement {
     @api recordId;
@@ -11,6 +14,18 @@ export default class CaseResolveAction extends LightningElement {
     errorMessage = '';
     isSaving = false;
     updateKnowledgeBase = false;
+    _status = '';
+
+    @wire(getRecord, { recordId: '$recordId', fields: FIELDS })
+    wiredCase({ data }) {
+        if (data) {
+            this._status = data.fields.Status.value;
+        }
+    }
+
+    get isCaseClosed() {
+        return this._status === 'Closed';
+    }
 
     renderedCallback() {
         this.adjustTextareaHeight();
@@ -65,30 +80,29 @@ export default class CaseResolveAction extends LightningElement {
                 createKb: this.updateKnowledgeBase
             });
 
-            const articleMessage = this.updateKnowledgeBase ? this.buildArticleMessage(result) : '';
+            const kbQueued = this.updateKnowledgeBase && result && result.articleQueued;
             this.dispatchEvent(
                 new ShowToastEvent({
-                    title: 'Case resolved',
-                    message: 'Resolution saved and case closed.' + articleMessage,
-                    variant: 'success'
+                    title: kbQueued ? 'Case resolved — KB article queued' : 'Case resolved',
+                    message: kbQueued
+                        ? 'Resolution saved. Check "KB Article Link" for a new article or "KB Update Scope" if an existing article was found (ready in ~1 min).'
+                        : 'Resolution saved and case closed.',
+                    variant: 'success',
+                    mode: 'sticky'
                 })
             );
 
             getRecordNotifyChange([{ recordId: this.recordId }]);
-            this.closeModal();
+            // Delay close so the toast event propagates to the record page
+            // before the quick-action screen is torn down.
+            // eslint-disable-next-line @lwc/lwc/no-async-operation
+            setTimeout(() => this.closeModal(), 400);
         } catch (error) {
             this.isSaving = false;
             this.errorMessage =
                 (error && error.body && error.body.message) ||
                 'Sorry, we could not save the resolution. Please try again.';
         }
-    }
-
-    buildArticleMessage(result) {
-        if (result && result.articleQueued === true) {
-            return ' KB articles are being generated in the background.';
-        }
-        return '';
     }
 
     closeModal() {

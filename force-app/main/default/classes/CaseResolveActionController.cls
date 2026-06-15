@@ -7,10 +7,10 @@
  * Behaviour on Save:
  *   1. Updates Case.Resolution__c with the agent-typed text and flips
  *      Status to 'Closed' in one DML.
- *   2. When createKb = true, enqueues KbCreationService (Queueable) which
- *      asynchronously invokes the GPTfy KB Creation Prompt and — via its
- *      configured Prompt Action (KbArticleBuilderAction) — creates 6 draft
- *      Knowledge articles linked to the Case.
+ *   2. When createKb = true, enqueues KbMatchAgentService (Queueable) which
+ *      uses the KB_Match_Agent (RAG) to decide: if a similar article already
+ *      exists it stops; otherwise it invokes the GPTfy KB Creation Prompt and
+ *      — via KbArticleBuilderAction — creates a new Knowledge article.
  *   3. Returns a SaveResult so the LWC can render a precise toast.
  *
  * KB creation is fully asynchronous and best-effort. If the Queueable fails,
@@ -47,10 +47,19 @@ public with sharing class CaseResolveActionController {
             throw new AuraHandledException('Resolution text is required.');
         }
 
+        Case existing = [
+            SELECT Subject, GPTfy_Question__c
+            FROM Case
+            WHERE Id = :caseId
+            LIMIT 1
+        ];
+        String questionText = CaseDescriptionFormatter.resolveQuestionText(existing);
+
         Case toUpdate = new Case(
             Id            = caseId,
             Resolution__c = resolutionText,
-            Status        = 'Closed'
+            Status        = 'Closed',
+            Description   = CaseDescriptionFormatter.formatOnClose(existing, resolutionText)
         );
 
         try {
@@ -68,7 +77,7 @@ public with sharing class CaseResolveActionController {
         result.caseClosed = true;
 
         if (createKb == true) {
-            System.enqueueJob(new KbCreationService(caseId));
+            System.enqueueJob(new KbMatchAgentService(caseId));
             result.articleQueued = true;
         }
 

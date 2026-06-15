@@ -265,10 +265,18 @@
                 <behavior>Edit</behavior>
                 <field>Proposed_Resolution__c</field>
             </layoutItems>
-            <layoutItems>
-                <behavior>Edit</behavior>
-                <field>Resolution__c</field>
-            </layoutItems>
+              <layoutItems>
+                  <behavior>Edit</behavior>
+                  <field>Resolution__c</field>
+              </layoutItems>
+              <layoutItems>
+                  <behavior>Readonly</behavior>
+                  <field>KB_Article_Link__c</field>
+              </layoutItems>
+              <layoutItems>
+                  <behavior>Readonly</behavior>
+                  <field>KB_Candidates__c</field>
+              </layoutItems>
             <layoutItems>
                 <behavior>Edit</behavior>
                 <field>Response_Description__c</field>

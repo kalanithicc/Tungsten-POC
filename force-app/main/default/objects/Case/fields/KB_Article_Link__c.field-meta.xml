@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>KB_Article_Link__c</fullName>
+    <description>Direct link to the Knowledge article that was created or updated by the KB Article Builder Action. Written automatically after each case resolution.</description>
+    <externalId>false</externalId>
+    <label>KB Article Link</label>
+    <required>false</required>
+    <trackFeedHistory>false</trackFeedHistory>
+    <type>Url</type>
+</CustomField>

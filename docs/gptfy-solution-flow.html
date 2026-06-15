@@ -1,0 +1,572 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>GPTfy — case_resolution</title>
+<style>
+:root {
+  --bg:#f5f4f0;
+  --card:#ffffff;
+  --text:#1a1a2e;
+  --text2:#4b5063;
+  --text3:#8e8fa8;
+  --border:#e2e0d8;
+
+  --sky-f:#e0f2fe;  --sky-b:#0284c7;  --sky-t:#0c4a6e;
+  --grn-f:#dcfce7;  --grn-b:#16a34a;  --grn-t:#14532d;
+  --ppl-f:#f3e8ff;  --ppl-b:#9333ea;  --ppl-t:#4c1d95;
+  --gry-f:#f3f4f6;  --gry-b:#9ca3af;  --gry-t:#374151;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{
+  background:var(--bg);
+  color:var(--text);
+  font-family:'Segoe UI',system-ui,-apple-system,BlinkMacSystemFont,sans-serif;
+  font-size:14px;
+  line-height:1.5;
+}
+
+/* ── Header ─────────────────────────────────────────────────── */
+.hdr{
+  background:var(--card);
+  border-bottom:1px solid var(--border);
+  padding:16px 32px;
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:20px;
+  flex-wrap:wrap;
+  box-shadow:0 1px 4px rgba(0,0,0,.06);
+}
+.hdr-left h1{font-size:19px;font-weight:700;letter-spacing:-.3px;color:var(--text)}
+.hdr-left p{font-size:12px;color:var(--text3);margin-top:2px}
+.leg{display:flex;gap:20px;flex-wrap:wrap;align-items:center}
+.li{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--text2);font-weight:500}
+.ld{width:16px;height:8px;border-radius:4px}
+
+/* ── Diagram wrap ────────────────────────────────────────────── */
+.diag{
+  padding:28px 20px;
+  overflow-x:auto;
+  background:var(--bg);
+}
+.diag svg{
+  display:block;
+  max-width:100%;
+  height:auto;
+  filter:drop-shadow(0 0 1px rgba(0,0,0,.04));
+}
+
+/* ── Node hover ──────────────────────────────────────────────── */
+.sf-node{cursor:pointer}
+.sf-node .nb{
+  transition:filter .14s, transform .14s;
+  transform-box:fill-box;
+  transform-origin:center;
+}
+.sf-node:hover .nb{filter:brightness(.93)}
+
+/* ── Modal overlay ───────────────────────────────────────────── */
+.ovl{
+  display:none;
+  position:fixed;
+  inset:0;
+  background:rgba(20,20,40,.22);
+  backdrop-filter:blur(2px);
+  z-index:300;
+  align-items:center;
+  justify-content:center;
+}
+.ovl.on{display:flex}
+.mdl{
+  background:var(--card);
+  border:1px solid var(--border);
+  border-radius:16px;
+  width:min(520px,92vw);
+  max-height:84vh;
+  overflow-y:auto;
+  box-shadow:0 12px 48px rgba(0,0,0,.16);
+  animation:pop .17s ease;
+}
+@keyframes pop{from{transform:scale(.94);opacity:0}to{transform:scale(1);opacity:1}}
+.mhd{
+  padding:18px 20px 14px;
+  border-bottom:1px solid var(--border);
+  display:flex;
+  gap:12px;
+  align-items:flex-start;
+  justify-content:space-between;
+  position:sticky;top:0;
+  background:var(--card);
+  border-radius:16px 16px 0 0;
+}
+.mcat{
+  display:flex;align-items:center;gap:8px;
+  font-size:11px;font-weight:700;text-transform:uppercase;
+  letter-spacing:.7px;margin-bottom:6px;
+}
+.mcat-dot{width:10px;height:10px;border-radius:3px;flex-shrink:0}
+.mtit{font-size:17px;font-weight:700;line-height:1.3;color:var(--text)}
+.msub{font-size:12px;color:var(--text3);margin-top:3px}
+.mcls{
+  background:none;border:none;cursor:pointer;
+  color:var(--text3);font-size:22px;line-height:1;
+  padding:2px 4px;flex-shrink:0;border-radius:6px;
+  transition:background .12s,color .12s;
+}
+.mcls:hover{background:#f3f4f6;color:var(--text)}
+.mbod{padding:16px 20px 20px}
+.mdsc{
+  font-size:13px;color:var(--text2);
+  white-space:pre-line;margin-bottom:14px;line-height:1.7;
+}
+.msh{
+  font-size:10px;font-weight:700;text-transform:uppercase;
+  letter-spacing:.7px;color:var(--text3);
+  margin-bottom:8px;margin-top:14px;
+}
+.mit{
+  font-size:12.5px;color:var(--text2);
+  padding:3px 0 3px 16px;
+  position:relative;line-height:1.5;
+}
+.mit::before{content:'▸';position:absolute;left:2px;color:var(--text3);font-size:10px;top:4px}
+.mnot{
+  background:#eff6ff;
+  border-left:3px solid var(--sky-b);
+  border-radius:0 8px 8px 0;
+  padding:11px 14px;
+  font-size:12.5px;color:var(--sky-t);
+  margin-top:14px;line-height:1.65;
+}
+
+/* ── KB section ──────────────────────────────────────────────── */
+.kbs{
+  background:var(--card);
+  border-top:2px solid var(--border);
+  padding:28px 32px 36px;
+}
+.kbs-hdr{margin-bottom:20px}
+.kbtit{
+  font-size:16px;font-weight:700;
+  display:flex;align-items:center;gap:10px;
+  flex-wrap:wrap;margin-bottom:5px;
+}
+.kbsub{font-size:12.5px;color:var(--text3)}
+.bpill{
+  display:inline-block;
+  background:var(--ppl-b);color:#fff;
+  font-size:10px;font-weight:700;
+  padding:2px 11px;border-radius:20px;letter-spacing:.2px;
+}
+.bpillo{
+  display:inline-block;
+  border:1.5px solid #d1d5db;color:var(--text2);
+  font-size:10px;font-weight:600;
+  padding:2px 10px;border-radius:20px;
+}
+.kbg{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
+@media(max-width:800px){.kbg{grid-template-columns:1fr}}
+.kc{
+  background:var(--bg);
+  border:1px solid var(--border);
+  border-radius:12px;
+  overflow:hidden;
+}
+.kc:nth-child(1){border-top:3px solid var(--ppl-b)}
+.kc:nth-child(2){border-top:3px solid var(--sky-b)}
+.kc:nth-child(3){border-top:3px solid #f59e0b}
+.kch{
+  padding:10px 15px;
+  font-size:12px;font-weight:700;
+  border-bottom:1px solid var(--border);
+  background:var(--card);
+  display:flex;align-items:center;justify-content:space-between;
+  gap:8px;flex-wrap:wrap;
+}
+.kcb{padding:14px 15px;font-size:12.5px;color:var(--text2);line-height:1.7}
+.kcb p{margin-bottom:10px}
+.kcb strong{color:var(--text);font-weight:600}
+.kcb code{
+  background:#f3f4f6;padding:1px 5px;border-radius:4px;
+  font-family:ui-monospace,monospace;font-size:11.5px;
+}
+.kwrn{
+  background:#fffbeb;
+  border-left:3px solid #f59e0b;
+  border-radius:0 6px 6px 0;
+  padding:9px 12px;
+  margin-top:10px;
+  font-size:12px;color:#78350f;
+}
+
+/* ── New: KB Status feedback note ───────────────────────────── */
+.kbnew{
+  background:#f0fdf4;
+  border:1px solid #bbf7d0;
+  border-radius:10px;
+  padding:12px 16px;
+  margin-top:16px;
+  font-size:12.5px;
+  color:#14532d;
+  line-height:1.65;
+}
+.kbnew strong{font-weight:700}
+</style>
+</head>
+<body>
+
+<div class="hdr">
+  <div class="hdr-left">
+    <h1>GPTfy &mdash; case_resolution</h1>
+    <p>Tungsten Automation &middot; End-to-end support automation &middot; Click any node for details</p>
+  </div>
+  <div class="leg">
+    <div class="li"><div class="ld" style="background:var(--sky-b)"></div>Customer / LWC</div>
+    <div class="li"><div class="ld" style="background:var(--grn-b)"></div>Apex / Trigger / Flow</div>
+    <div class="li"><div class="ld" style="background:var(--ppl-b)"></div>GPTfy Agent</div>
+    <div class="li"><div class="ld" style="background:var(--gry-b)"></div>Outcome</div>
+  </div>
+</div>
+
+<div class="diag">
+  <svg id="svg" viewBox="0 0 1420 810" style="width:100%;min-width:900px"></svg>
+</div>
+
+<!-- Modal -->
+<div class="ovl" id="ovl" onclick="closeModal(event)">
+  <div class="mdl" onclick="event.stopPropagation()">
+    <div class="mhd">
+      <div>
+        <div class="mcat" id="m-cat"></div>
+        <div class="mtit" id="m-tit"></div>
+        <div class="msub" id="m-sub"></div>
+      </div>
+      <button class="mcls" onclick="closeModal()">&times;</button>
+    </div>
+    <div class="mbod" id="m-bod"></div>
+  </div>
+</div>
+
+<div class="kbs">
+  <div class="kbs-hdr">
+    <div class="kbtit">KB Match Gate <span class="bpill">Agent-only · CREATE never UPDATE</span></div>
+    <div class="kbsub">When an agent checks &ldquo;Create Knowledge Base&rdquo; on resolve, KbMatchAgentService is the sole gate — no SOSL, no 3-tier pipeline</div>
+  </div>
+  <div class="kbg">
+    <div class="kc">
+      <div class="kch">Step 1 &mdash; KB_Match_Agent <span class="bpill">RAG semantic search</span></div>
+      <div class="kcb">
+        <p><strong>KbMatchAgentService</strong> invokes <strong>KB_Match_Agent</strong> with Case Subject + Description (500 chars).</p>
+        <p>Agent returns <code>KB_MATCHES_START&hellip;END</code> with up to 3 article titles from FILE_SEARCH, plus optional <code>KB_UPDATE_SCOPE</code> block.</p>
+        <p>Response HTML is normalized (<code>&lt;br&gt;</code> &rarr; newlines, entity decode) before parsing.</p>
+      </div>
+    </div>
+    <div class="kc">
+      <div class="kch">Step 2 &mdash; SOQL verify <span class="bpillo">Exact + fuzzy</span></div>
+      <div class="kcb">
+        <p><strong>Exact:</strong> <code>WHERE Title IN :agentTitles AND PublishStatus IN ('Draft','Online')</code></p>
+        <p><strong>Fuzzy:</strong> if agent paraphrases titles, keyword <code>LIKE '%word%'</code> on distinctive terms (e.g. &ldquo;Thumbnail&rdquo;, &ldquo;Excel&rdquo;).</p>
+        <p>Any confirmed match &rarr; <strong>Route 3 SKIP</strong> — no new article.</p>
+      </div>
+    </div>
+    <div class="kc">
+      <div class="kch">Step 3 &mdash; CREATE or stop <span class="bpillo">Route 3 / 4</span></div>
+      <div class="kcb">
+        <p><strong>SKIP (Route 3):</strong> writes scope to <code>Case.KB_Candidates__c</code> (KB Update Scope). Agent reviews why AI missed the article.</p>
+        <p><strong>CREATE (Route 4):</strong> chains <strong>KbCreationService</strong> &rarr; KB Creation Prompt &rarr; <strong>KbArticleBuilderAction</strong> inserts draft article only. UPDATE instructions ignored.</p>
+        <p>Sets <code>Case.KB_Article_Link__c</code> and <code>CaseArticle</code> junction on create.</p>
+      </div>
+    </div>
+  </div>
+  <div class="kbnew">
+    <strong>Email fix:</strong> <code>Case_Resolution_Email_RTF</code> sends plain text from <code>Case.Description</code> (not HTML <code>Resolution__c</code>) so customers never see raw tags like <code>&lt;p&gt;</code>.
+  </div>
+</div>
+
+<script>
+const NW = 190, NH = 70;
+
+// Row Y positions
+const Y0 = 95,  // Self-Service Path
+      Y1 = 310, // MCQ / Escalation
+      Y2 = 520, // KB Candidate Search
+      Y3 = 700; // KB Article Result
+
+const CAT = {
+  user:    { f:'#e0f2fe', b:'#0284c7', t:'#0c4a6e', lbl:'Customer / LWC' },
+  apex:    { f:'#dcfce7', b:'#16a34a', t:'#14532d', lbl:'Apex / Trigger / Flow' },
+  gptfy:   { f:'#f3e8ff', b:'#9333ea', t:'#4c1d95', lbl:'GPTfy Agent' },
+  outcome: { f:'#f3f4f6', b:'#9ca3af', t:'#374151', lbl:'Outcome' },
+};
+
+// X positions for Row 0 (6 nodes with 230px spacing)
+const X0=15, XS=230; // start, step
+
+const NODES = [
+  { id:'intake',
+    x:X0,           y:Y0, cat:'user',
+    label:'Guest Submits', sub:'caseResolutionAssistant',
+    desc:'Guest types or dictates a question (minimum 10 words) on the Experience Cloud LWR site and clicks Submit.',
+    comp:['caseResolutionAssistant (LWC)','Web Speech API'],
+    flds:['Case.Subject (initial)','Case.Origin = Web','Case.SuppliedEmail'] },
+
+  { id:'case-new',
+    x:X0+XS*1,     y:Y0, cat:'apex',
+    label:'Case + Clarifier',     sub:'submitForClarification',
+    desc:'CaseResolutionController.submitForClarification() inserts Case with AI_Clarification_Pending__c=true and enqueues CaseQuestionClarifierAgentService in the guest session.',
+    comp:['CaseResolutionController','CaseQuestionClarifierAgentService (Queueable)'],
+    flds:['AI_Clarification_Pending__c = true','Intent_Analysis__c (pending)'] },
+
+  { id:'clarifier',
+    x:X0+XS*2,     y:Y0, cat:'gptfy',
+    label:'Question Clarifier', sub:'Question_Clarifier_Agent',
+    desc:'Question_Clarifier_Agent performs RAG on the Knowledge Base and returns 1–3 targeted MCQs. QuestionClarifierAction.buildJson() parses the response into JSON stored in Intent_Analysis__c.',
+    comp:['Question_Clarifier_Agent (GPTfy)','QuestionClarifierAction.buildJson()'],
+    flds:['Case.Intent_Analysis__c = {cleanedQuestion, clarifications[]}'] },
+
+  { id:'mcq',
+    x:X0+XS*2,     y:Y1, cat:'user',
+    label:'MCQ Confirm',          sub:'LWC polls · guest picks',
+    desc:'LWC polls getClarification() every 2s, renders cleaned question + MCQ chips. Guest confirms → confirmQuestion() publishes Case_Clarification_Confirmed__e and enqueues CaseAgentResolutionService directly.',
+    comp:['caseResolutionAssistant (LWC)','Case_Clarification_Confirmed__e','CaseConfirmTrigger'],
+    flds:['Case.Subject (updated)','AI_Clarification_Pending__c cleared'],
+    note:'Resolution agent MUST run in guest session — not via Platform Event (GPTfy callouts fail as Automated Process).' },
+
+  { id:'resolver',
+    x:X0+XS*3,     y:Y0, cat:'gptfy',
+    label:'Case Resolve Agent',  sub:'Dual-field write',
+    desc:'Case_Resolve_Agent RAG-searches KB and returns HTML answer. CaseAgentResolutionService strips KB_REFS block, writes Summary__c (HTML) and Description (plain text).',
+    comp:['CaseAgentResolutionService (Queueable)','Case_Resolve_Agent (GPTfy)'],
+    flds:['Case.Summary__c (HTML)','Case.Description (plain text)'] },
+
+  { id:'decision',
+    x:X0+XS*4,     y:Y0, cat:'user',
+    label:'Customer Decision',   sub:'Resolved · Need More Help',
+    desc:'LWC renders Summary__c via lightning-formatted-rich-text. Customer chooses Mark Resolved (Route 1) or Need More Help (Route 2 escalation).',
+    comp:['caseResolutionAssistant (LWC)','CaseResolutionController.resolveCase()'],
+    flds:['Case.Summary__c'] },
+
+  { id:'closed',
+    x:X0+XS*5,     y:Y0, cat:'outcome',
+    label:'Case Closed',          sub:'Email sent',
+    desc:'resolveCase() publishes Case_Resolved__e. CaseResolvedTrigger copies Summary__c → Resolution__c and closes case. Case_Resolution_Email_RTF sends plain-text email from Description.',
+    comp:['Case_Resolved__e','CaseResolvedTrigger','Case_Resolution_Email_RTF (Flow)'],
+    flds:['Case.Status = Closed','Case.Resolution__c','Email uses Description (plain)'] },
+
+  { id:'escalated',
+    x:X0+XS*4,     y:Y1, cat:'outcome',
+    label:'Case Escalated',       sub:'Open · Agent reviews',
+    desc:'Customer clicks Need More Help. Case stays open. Agent reviews Subject, Summary__c (AI answer), and Description in Service Console.',
+    comp:['Service Console','Case-GPTfy Case Layout'],
+    flds:['Case.Status = Open','Case.Summary__c','Case.Description'] },
+
+  { id:'agent-resolve',
+    x:X0+XS*5,     y:Y1, cat:'apex',
+    label:'Agent Saves Resolution', sub:'caseResolveAction LWC',
+    desc:'Agent types resolution in Resolve quick action. CaseResolveActionController closes case and optionally enqueues KbMatchAgentService when Create KB is checked.',
+    comp:['caseResolveAction (LWC)','CaseResolveActionController','Case_Resolution_Email_RTF (Flow)'],
+    flds:['Case.Resolution__c','Case.Description (KB path)','Case.Status = Closed'] },
+
+  { id:'kb-update',
+    x:X0+XS*5,     y:Y2, cat:'gptfy',
+    label:'KB Match Gate',  sub:'KbMatchAgentService',
+    desc:'KB_Match_Agent returns KB_MATCHES titles. Response HTML normalized. Exact SOQL then fuzzy LIKE verify titles in org.\n\nMatch found → Route 3 SKIP: write KB Update Scope to KB_Candidates__c.\nNo match → Route 4 CREATE: chain KbCreationService.',
+    comp:['KbMatchAgentService (Queueable)','KB_Match_Agent (GPTfy)'],
+    flds:['Case.KB_Candidates__c (skip path scope)'],
+    note:'CREATE-only policy — existing articles are never auto-updated.' },
+
+  { id:'kb-result',
+    x:X0+XS*5,     y:Y3, cat:'outcome',
+    label:'KB Article Created',   sub:'Route 4 only',
+    desc:'KbCreationService invokes KB Creation Prompt. KbArticleBuilderAction always CREATEs draft Knowledge__kav (UPDATE ignored). Sets KB_Article_Link__c and CaseArticle junction.',
+    comp:['KbCreationService','KB Creation Prompt','KbArticleBuilderAction','Knowledge__kav','CaseArticle'],
+    flds:['Knowledge__kav.Title','Knowledge__kav.Resolution__c','Case.KB_Article_Link__c'] },
+];
+
+const EDGES = [
+  { f:'intake',        t:'case-new' },
+  { f:'case-new',      t:'clarifier' },
+  { f:'clarifier',     t:'mcq',          lbl:'MCQs ready',  clr:'#c084fc' },
+  { f:'mcq',           t:'resolver',     lbl:'confirmed',  clr:'#c084fc' },
+  { f:'resolver',      t:'decision' },
+  { f:'decision',      t:'closed',       lbl:'resolved ✓', clr:'#16a34a' },
+  { f:'decision',      t:'escalated',    lbl:'need help',  clr:'#f59e0b' },
+  { f:'escalated',     t:'agent-resolve' },
+  { f:'agent-resolve', t:'kb-update',    lbl:'if Update KB', clr:'#9ca3af' },
+  { f:'kb-update',     t:'kb-result' },
+];
+
+// ── Build SVG ────────────────────────────────────────────────
+const ns  = 'http://www.w3.org/2000/svg';
+const svg = document.getElementById('svg');
+const nm  = {};
+NODES.forEach(n => nm[n.id] = n);
+
+const mk = (tag, attrs, parent) => {
+  const el = document.createElementNS(ns, tag);
+  for (const [k, v] of Object.entries(attrs || {})) el.setAttribute(k, v);
+  if (parent) parent.appendChild(el);
+  return el;
+};
+
+// Background
+mk('rect', { width:1420, height:810, fill:'#f9f8f4' }, svg);
+
+// Subtle dot-grid
+const pat = mk('pattern', { id:'grid', x:0, y:0, width:28, height:28, patternUnits:'userSpaceOnUse' },
+               mk('defs', {}, svg));
+mk('circle', { cx:1, cy:1, r:1, fill:'rgba(0,0,0,.07)' }, pat);
+mk('rect', { width:1420, height:810, fill:'url(#grid)' }, svg);
+
+// Phase band backgrounds
+const bands = [
+  { y:Y0-14, h:NH+30, fill:'rgba(224,242,254,.30)', lbl:'Self-Service Path →', lx:10, ly:Y0-16, lclr:'#0284c7' },
+  { y:Y1-14, h:NH+30, fill:'rgba(243,232,255,.22)', lbl:'Escalation Path →',   lx:X0+XS*4-2, ly:Y1-16, lclr:'#9333ea' },
+  { y:Y2-14, h:NH+30, fill:'rgba(243,232,255,.16)', lbl:'KB Update (optional) ↓', lx:X0+XS*5+2, ly:Y2-16, lclr:'#9333ea' },
+  { y:Y3-14, h:NH+30, fill:'rgba(243,244,246,.50)', lbl:'', lx:0, ly:0, lclr:'' },
+];
+bands.forEach(b => {
+  mk('rect', { x:0, y:b.y, width:1420, height:b.h, fill:b.fill }, svg);
+  if (b.lbl) {
+    const t = mk('text', { x:b.lx, y:b.ly, 'font-size':10, 'font-weight':700,
+      'letter-spacing':'.5', fill:b.lclr, opacity:.75 }, svg);
+    t.textContent = b.lbl;
+  }
+});
+
+// Arrowhead markers
+const defs2 = mk('defs', {}, svg);
+[
+  ['aDefault','#b0b8c8'],
+  ['aPurple', '#9333ea'],
+  ['aLilac',  '#c084fc'],
+  ['aGreen',  '#16a34a'],
+  ['aAmber',  '#f59e0b'],
+  ['aGray',   '#9ca3af'],
+].forEach(([id, fill]) => {
+  const m = mk('marker', { id, markerWidth:9, markerHeight:9, refX:8, refY:4.5, orient:'auto' }, defs2);
+  mk('path', { d:'M1.5,1.5 L8,4.5 L1.5,7.5 Z', fill }, m);
+});
+
+function arrowFor(clr) {
+  const map = {
+    '#9333ea': ['url(#aPurple)', '#9333ea'],
+    '#c084fc': ['url(#aLilac)',  '#c084fc'],
+    '#16a34a': ['url(#aGreen)',  '#16a34a'],
+    '#f59e0b': ['url(#aAmber)',  '#f59e0b'],
+    '#9ca3af': ['url(#aGray)',   '#9ca3af'],
+  };
+  return clr ? (map[clr] || ['url(#aDefault)','#b0b8c8']) : ['url(#aDefault)','#b0b8c8'];
+}
+
+// Draw edges
+const eLyr = mk('g', {}, svg);
+EDGES.forEach(ed => {
+  const f = nm[ed.f], t = nm[ed.t];
+  const fcx = f.x + NW/2, fcy = f.y + NH/2;
+  const tcx = t.x + NW/2, tcy = t.y + NH/2;
+  const dx = tcx - fcx, dy = tcy - fcy;
+  let sx, sy, ex, ey;
+
+  if (Math.abs(dx) >= Math.abs(dy)) {
+    if (dx >= 0) { sx = f.x+NW; sy = fcy; ex = t.x;   ey = tcy; }
+    else         { sx = f.x;   sy = fcy; ex = t.x+NW; ey = tcy; }
+  } else {
+    if (dy >= 0) { sx = fcx; sy = f.y+NH; ex = tcx; ey = t.y;   }
+    else         { sx = fcx; sy = f.y;    ex = tcx; ey = t.y+NH; }
+  }
+
+  const mx = (sx + ex) / 2, my = (sy + ey) / 2;
+  const horiz = Math.abs(dx) >= Math.abs(dy);
+  const d = horiz
+    ? `M${sx},${sy} C${mx},${sy} ${mx},${ey} ${ex-8},${ey}`
+    : `M${sx},${sy} C${sx},${my} ${ex},${my} ${ex},${ey-8}`;
+
+  const [marker, stroke] = arrowFor(ed.clr);
+  const sw = (ed.lbl === 'resolved ✓' || ed.lbl === 'need help') ? 2.5 : 1.8;
+  const dash = ed.lbl === 'if Update KB' ? '5 3' : 'none';
+
+  const g = mk('g', {}, eLyr);
+  mk('path', { d, fill:'none', stroke, 'stroke-width':sw,
+    'stroke-dasharray':dash, 'marker-end':marker,
+    'stroke-linecap':'round', 'stroke-linejoin':'round' }, g);
+
+  if (ed.lbl) {
+    let lx, ly;
+    if (horiz) { lx = mx; ly = Math.min(sy, ey) - 9; }
+    else       { lx = sx + 10; ly = my; }
+    const lt = mk('text', { x:lx, y:ly,
+      'text-anchor': horiz ? 'middle' : 'start',
+      'font-size':10, 'font-style':'italic',
+      'font-weight':600, fill:stroke, opacity:.9 }, g);
+    lt.textContent = ed.lbl;
+  }
+});
+
+// Draw nodes
+NODES.forEach(n => {
+  const c = CAT[n.cat];
+  const g = mk('g', { class:'sf-node', transform:`translate(${n.x},${n.y})` }, svg);
+
+  // Shadow layer
+  mk('rect', { x:3, y:4, width:NW, height:NH, rx:12, fill:'rgba(0,0,0,.08)' }, g);
+  // Main background
+  mk('rect', { class:'nb', width:NW, height:NH, rx:12,
+    fill:c.f, stroke:c.b, 'stroke-width':2 }, g);
+  // Left accent bar
+  mk('rect', { x:0, y:8, width:5, height:NH-16, rx:2.5, fill:c.b }, g);
+
+  // Label text
+  const lbl = mk('text', {
+    x: NW/2 + 4, y: NH/2 - 7,
+    'text-anchor':'middle',
+    'font-size':13, 'font-weight':700,
+    fill: c.t
+  }, g);
+  lbl.textContent = n.label;
+
+  // Sub-label text
+  const sub = mk('text', {
+    x: NW/2 + 4, y: NH/2 + 10,
+    'text-anchor':'middle',
+    'font-size':10, fill:c.t, opacity:.65
+  }, g);
+  sub.textContent = n.sub;
+
+  g.addEventListener('click', () => openModal(n));
+});
+
+// ── Modal ─────────────────────────────────────────────────────
+function openModal(n) {
+  const c = CAT[n.cat];
+  document.getElementById('m-cat').innerHTML =
+    `<div class="mcat-dot" style="background:${c.b}"></div>` +
+    `<span style="color:${c.b}">${c.lbl}</span>`;
+  document.getElementById('m-tit').textContent = n.label;
+  document.getElementById('m-sub').textContent = n.sub;
+
+  let h = `<div class="mdsc">${n.desc}</div>`;
+  if (n.comp?.length) {
+    h += `<div class="msh">Components</div>`;
+    n.comp.forEach(c => h += `<div class="mit">${c}</div>`);
+  }
+  if (n.flds?.length) {
+    h += `<div class="msh">Fields Involved</div>`;
+    n.flds.forEach(f => h += `<div class="mit">${f}</div>`);
+  }
+  if (n.note) h += `<div class="mnot">${n.note}</div>`;
+  document.getElementById('m-bod').innerHTML = h;
+  document.getElementById('ovl').classList.add('on');
+}
+
+function closeModal(e) {
+  if (!e || e.target === document.getElementById('ovl'))
+    document.getElementById('ovl').classList.remove('on');
+}
+document.addEventListener('keydown', e => { if (e.key === 'Escape') closeModal(); });
+</script>
+</body>
+</html>

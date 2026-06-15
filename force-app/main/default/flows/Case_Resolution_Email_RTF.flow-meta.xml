@@ -92,7 +92,7 @@
     <formulas>
         <name>Resolution_For_Email</name>
         <dataType>String</dataType>
-        <expression>SUBSTITUTE(SUBSTITUTE(SUBSTITUTE(SUBSTITUTE(SUBSTITUTE({!$Record.Resolution__c}, &quot;&amp;quot;&quot;, CHR(34)), &quot;&amp;#39;&quot;, CHR(39)), &quot;&amp;amp;&quot;, CHR(38)), &quot;&amp;lt;&quot;, CHR(60)), &quot;&amp;gt;&quot;, CHR(62))</expression>
+        <expression>{!$Record.Description}</expression>
     </formulas>
     <interviewLabel>Case Resolution Email RTF {!$Flow.CurrentDateTime}</interviewLabel>
     <label>Case Resolution Email RTF</label>

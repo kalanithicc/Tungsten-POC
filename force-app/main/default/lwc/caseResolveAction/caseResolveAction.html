@@ -1,81 +1,109 @@
 <template>
     <div class="slds-p-around_small cra-modal">
-        <p class="slds-text-body_regular slds-m-bottom_x-small cra-instructions">
-            Enter the resolution to provide to the customer. Saving will close
-            this case and copy the text into the <strong>Resolution</strong> field.
-        </p>
 
-        <div class="slds-form-element cra-field">
-            <label class="slds-form-element__label" for="resolution-textarea">
-                <abbr class="slds-required" title="required">*</abbr>
-                Resolution
-            </label>
-            <div class="slds-form-element__control">
-                <textarea
-                    id="resolution-textarea"
-                    data-id="resolution-textarea"
-                    class="slds-textarea cra-textarea"
-                    placeholder="Type the solution here..."
-                    value={resolutionText}
-                    oninput={handleResolutionChange}
-                    disabled={isSaving}
-                    required
-                ></textarea>
-            </div>
-        </div>
-
-        <template if:true={errorMessage}>
-            <div
-                class="slds-text-color_error slds-m-top_x-small"
-                role="alert"
-            >
-                {errorMessage}
-            </div>
-        </template>
-
-        <div class="slds-form-element cra-field slds-m-top_x-small">
-            <div class="slds-form-element__control">
-                <lightning-input
-                    type="checkbox"
-                    label="Update Knowledge Base"
-                    name="updateKb"
-                    checked={updateKnowledgeBase}
-                    onchange={handleUpdateKbChange}
-                    disabled={isSaving}
-                ></lightning-input>
-            </div>
-        </div>
-
-        <div class="slds-text-align_right cra-actions">
-            <lightning-button
-                label="Cancel"
-                title="Cancel"
-                variant="neutral"
-                onclick={handleCancel}
-                disabled={isSaving}
-                class="slds-m-right_x-small"
-            ></lightning-button>
-            <lightning-button
-                label="Save"
-                title="Save"
-                variant="brand"
-                onclick={handleSave}
-                disabled={isSaving}
-            ></lightning-button>
-        </div>
-
-        <template if:true={isSaving}>
-            <div
-                class="slds-m-top_x-small slds-text-color_weak"
-                role="status"
-            >
-                <lightning-spinner
-                    alternative-text="Saving"
+        <!-- Closed case guard -->
+        <template if:true={isCaseClosed}>
+            <div class="slds-box slds-theme_shade slds-text-align_center slds-p-around_medium">
+                <lightning-icon
+                    icon-name="utility:check"
+                    variant="success"
                     size="small"
-                    variant="brand"
-                ></lightning-spinner>
-                <span class="slds-m-left_small">Saving resolution...</span>
+                    class="slds-m-right_x-small"
+                ></lightning-icon>
+                <span class="slds-text-body_regular">
+                    This case is already <strong>Closed</strong>. No further resolution is needed.
+                </span>
+            </div>
+            <div class="slds-text-align_right cra-actions slds-m-top_small">
+                <lightning-button
+                    label="Close"
+                    title="Close"
+                    variant="neutral"
+                    onclick={handleCancel}
+                ></lightning-button>
             </div>
         </template>
+
+        <!-- Normal resolution form (only for open cases) -->
+        <template if:false={isCaseClosed}>
+            <p class="slds-text-body_regular slds-m-bottom_x-small cra-instructions">
+                Enter the resolution to provide to the customer. Saving will close
+                this case and copy the text into the <strong>Resolution</strong> field.
+            </p>
+
+            <div class="slds-form-element cra-field">
+                <label class="slds-form-element__label" for="resolution-textarea">
+                    <abbr class="slds-required" title="required">*</abbr>
+                    Resolution
+                </label>
+                <div class="slds-form-element__control">
+                    <textarea
+                        id="resolution-textarea"
+                        data-id="resolution-textarea"
+                        class="slds-textarea cra-textarea"
+                        placeholder="Type the solution here..."
+                        value={resolutionText}
+                        oninput={handleResolutionChange}
+                        disabled={isSaving}
+                        required
+                    ></textarea>
+                </div>
+            </div>
+
+            <template if:true={errorMessage}>
+                <div
+                    class="slds-text-color_error slds-m-top_x-small"
+                    role="alert"
+                >
+                    {errorMessage}
+                </div>
+            </template>
+
+            <div class="slds-form-element cra-field slds-m-top_x-small">
+                <div class="slds-form-element__control">
+                    <lightning-input
+                        type="checkbox"
+                        label="Update Knowledge Base"
+                        name="updateKb"
+                        checked={updateKnowledgeBase}
+                        onchange={handleUpdateKbChange}
+                        disabled={isSaving}
+                    ></lightning-input>
+                </div>
+            </div>
+
+            <div class="slds-text-align_right cra-actions">
+                <lightning-button
+                    label="Cancel"
+                    title="Cancel"
+                    variant="neutral"
+                    onclick={handleCancel}
+                    disabled={isSaving}
+                    class="slds-m-right_x-small"
+                ></lightning-button>
+                <lightning-button
+                    label="Save"
+                    title="Save"
+                    variant="brand"
+                    onclick={handleSave}
+                    disabled={isSaving}
+                ></lightning-button>
+            </div>
+
+            <template if:true={isSaving}>
+                <div
+                    class="slds-m-top_x-small slds-text-color_weak"
+                    role="status"
+                >
+                    <lightning-spinner
+                        alternative-text="Saving"
+                        size="small"
+                        variant="brand"
+                    ></lightning-spinner>
+                    <span class="slds-m-left_small">Saving resolution...</span>
+                </div>
+            </template>
+        </template>
+
     </div>
 </template>

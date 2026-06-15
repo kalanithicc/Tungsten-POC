@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>CleanedQuestion__c</fullName>
+    <description>The confirmed, cleaned question to set as Case.Subject. Includes any selected MCQ context appended in brackets.</description>
+    <label>Cleaned Question</label>
+    <length>255</length>
+    <type>Text</type>
+</CustomField>

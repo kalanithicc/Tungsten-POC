@@ -14,9 +14,10 @@ private class CaseResolveActionControllerTest {
     @IsTest
     static void saveResolution_closesCaseAndCopiesText() {
         Case c = new Case(
-            Origin  = 'Web',
-            Status  = 'New',
-            Subject = 'Test case to resolve'
+            Origin                        = 'Web',
+            Status                        = 'New',
+            Subject                       = 'Test case to resolve',
+            AI_Clarification_Pending__c   = true
         );
         insert c;
 
@@ -26,11 +27,20 @@ private class CaseResolveActionControllerTest {
         CaseResolveActionController.saveResolution(c.Id, solution, false);
         Test.stopTest();
 
-        Case after = [SELECT Status, Resolution__c FROM Case WHERE Id = :c.Id];
+        Case after = [
+            SELECT Status, Resolution__c, Description
+            FROM Case
+            WHERE Id = :c.Id
+        ];
         System.assertEquals('Closed', after.Status,
             'saveResolution must flip Status to Closed');
         System.assertEquals(solution, after.Resolution__c,
             'saveResolution must copy the supplied text into Resolution__c verbatim');
+        System.assertEquals(
+            CaseDescriptionFormatter.formatOnClose(c, solution),
+            after.Description,
+            'Description must show Question and Resolution Provided labels on close'
+        );
     }
 
     @IsTest

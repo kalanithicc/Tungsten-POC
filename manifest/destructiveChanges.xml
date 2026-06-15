@@ -1,12 +1,23 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <Package xmlns="http://soap.sforce.com/2006/04/metadata">
     <types>
-        <members>Case.KB_Prompt_Context__c</members>
-        <name>CustomField</name>
+        <members>KbCandidateSearchService</members>
+        <members>KbCandidateSearchServiceTest</members>
+        <members>KbPromptContextService</members>
+        <members>KbPromptContextServiceTest</members>
+        <name>ApexClass</name>
     </types>
     <types>
-        <members>KB_Prompt_Context__c</members>
+        <members>CaseAIRequestTrigger</members>
+        <name>ApexTrigger</name>
+    </types>
+    <types>
+        <members>Case_AI_Requested__e</members>
         <name>CustomObject</name>
+    </types>
+    <types>
+        <members>Case.KB_Update_Status__c</members>
+        <name>CustomField</name>
     </types>
     <version>66.0</version>
 </Package>

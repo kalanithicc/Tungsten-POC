@@ -1,11 +1,27 @@
 import { LightningElement, wire } from 'lwc';
-import createSupportCase from '@salesforce/apex/CaseResolutionController.createSupportCase';
+import submitForClarification from '@salesforce/apex/CaseResolutionController.submitForClarification';
+import getClarification from '@salesforce/apex/CaseResolutionController.getClarification';
+import confirmQuestion from '@salesforce/apex/CaseResolutionController.confirmQuestion';
 import getRecommendation from '@salesforce/apex/CaseResolutionController.getRecommendation';
 import resolveCase from '@salesforce/apex/CaseResolutionController.resolveCase';
 import getProductOptions from '@salesforce/apex/CaseResolutionController.getProductOptions';
+import getPortalUserContext from '@salesforce/apex/CaseResolutionController.getPortalUserContext';
+
+const CLARIFY_AGENT_UNAVAILABLE_USER =
+    'Our AI assistant is temporarily unavailable. Please try again in a moment, ' +
+    'or edit your question below and confirm — our team can still help if needed.';
+
+const CLARIFY_NO_MCQ_HINT =
+    'We could not generate follow-up questions this time. You can still edit your question and confirm.';
+
+const RESOLUTION_AGENT_UNAVAILABLE_USER =
+    'We could not generate an AI answer right now. Please try submitting again shortly, ' +
+    'or choose "No, still need help" and our support team will follow up.';
 
 const STATE = {
     INPUT: 'INPUT',
+    CLARIFYING: 'CLARIFYING',
+    CLARIFICATION: 'CLARIFICATION',
     LOADING: 'LOADING',
     RECOMMENDATION: 'RECOMMENDATION',
     RESOLVING: 'RESOLVING',
@@ -13,8 +29,9 @@ const STATE = {
     CASE_CREATED: 'CASE_CREATED'
 };
 
-const POLL_INTERVAL_MS = 2500;
-const MAX_POLL_ATTEMPTS = 36;
+const POLL_INTERVAL_MS    = 2500;
+const MAX_POLL_ATTEMPTS   = 36;
+const MAX_CLARIFY_ATTEMPTS = 20; // 50 s max wait for clarification prompt
 // Keep in sync with CaseResolutionController
 const NO_ANSWER_MESSAGE =
     'Thank you for your question. We could not find a specific answer in our knowledge base at this time. ' +
@@ -46,6 +63,7 @@ export default class CaseResolutionAssistant extends LightningElement {
     lastNameError = '';
     emailError = '';
     questionError = '';
+    productError = '';
     questionHint = '';
 
     productOptions = [];
@@ -59,11 +77,26 @@ export default class CaseResolutionAssistant extends LightningElement {
     pollAttempts = 0;
     pollTimeoutId = null;
 
+    // Clarification
+    clarifyAttempts = 0;
+    clarifyTimeoutId = null;
+    clarifiedQuestion = '';
+    clarifications = [];
+    clarifyWarningMessage = '';
+
+    // Portal session (A4) + profile prefill (B1)
+    isGuestSession = true;
+    sessionDisplayLabel = 'Browsing as guest — log in for full AI features';
+    profileFirstName = '';
+    profileLastName = '';
+    profileEmail = '';
+
     // Speech-to-text
     isListening = false;
     interimTranscript = '';
     micError = '';
     _speechRecognition = null;
+    showMicHint = true;
 
     @wire(getProductOptions)
     wiredProducts({ data }) {
@@ -72,12 +105,72 @@ export default class CaseResolutionAssistant extends LightningElement {
         }
     }
 
+    @wire(getPortalUserContext)
+    wiredPortalUser({ data }) {
+        if (!data) {
+            return;
+        }
+        this.isGuestSession = data.isGuest === 'true';
+        if (this.isGuestSession) {
+            this.sessionDisplayLabel =
+                'Browsing as guest — log in for full AI features';
+        } else {
+            const name = (data.displayName || '').trim();
+            this.sessionDisplayLabel = name
+                ? `Logged in as ${name}`
+                : 'Logged in';
+            this.profileFirstName = data.firstName || '';
+            this.profileLastName = data.lastName || '';
+            this.profileEmail = data.email || '';
+            if (this.currentState === STATE.INPUT && !this.firstName && !this.lastName && !this.email) {
+                this._applyProfilePrefill();
+            }
+        }
+    }
+
+    _applyProfilePrefill() {
+        this.firstName = this.profileFirstName;
+        this.lastName = this.profileLastName;
+        this.email = this.profileEmail;
+    }
+
+    _syncInputFormDom() {
+        // eslint-disable-next-line @lwc/lwc/no-async-operation
+        setTimeout(() => {
+            // eslint-disable-next-line @lwc/lwc/no-template-children
+            const firstEl = this.template.querySelector('#firstName');
+            // eslint-disable-next-line @lwc/lwc/no-template-children
+            const lastEl = this.template.querySelector('#lastName');
+            // eslint-disable-next-line @lwc/lwc/no-template-children
+            const emailEl = this.template.querySelector('#email');
+            // eslint-disable-next-line @lwc/lwc/no-template-children
+            const questionEl = this.template.querySelector('#question');
+            // eslint-disable-next-line @lwc/lwc/no-template-children
+            const productEl = this.template.querySelector('#product');
+            if (firstEl) firstEl.value = this.firstName || '';
+            if (lastEl) lastEl.value = this.lastName || '';
+            if (emailEl) emailEl.value = this.email || '';
+            if (questionEl) questionEl.value = this.question || '';
+            if (productEl) productEl.value = this.product || '';
+        }, 0);
+    }
+
     connectedCallback() {
         this.applyHostChrome();
     }
 
     renderedCallback() {
         this.applyHostChrome();
+        // LWC doesn't always push reactive property changes into a <textarea>'s
+        // DOM value when the containing div transitions from display:none to
+        // visible. Force-sync the clarified question imperatively after every
+        // render to guarantee the textarea shows the correct text.
+        if (this.currentState === STATE.CLARIFICATION && this.clarifiedQuestion) {
+            const el = this.template.querySelector('textarea[data-id="clarifiedQuestion"]');
+            if (el && el.value !== this.clarifiedQuestion) {
+                el.value = this.clarifiedQuestion;
+            }
+        }
     }
 
     applyHostChrome() {
@@ -108,6 +201,9 @@ export default class CaseResolutionAssistant extends LightningElement {
     }
     handleQuestionChange(event) {
         this.question = event.target.value;
+        if (this.showMicHint) {
+            this.showMicHint = false;
+        }
         if (this.questionError) {
             this.questionError = this.validateQuestion();
         }
@@ -117,6 +213,13 @@ export default class CaseResolutionAssistant extends LightningElement {
     }
     handleProductChange(event) {
         this.product = event.target.value;
+        if (this.productError) {
+            this.productError = this.validateProduct();
+        }
+    }
+
+    handleProductBlur() {
+        this.productError = this.validateProduct();
     }
 
     handleFirstNameBlur() {
@@ -161,6 +264,13 @@ export default class CaseResolutionAssistant extends LightningElement {
         return '';
     }
 
+    validateProduct() {
+        if (!(this.product || '').trim()) {
+            return 'Please select a product.';
+        }
+        return '';
+    }
+
     isQuestionThin() {
         const words = (this.question || '').trim().split(/\s+/).filter(w => w.length > 0);
         return words.length < MIN_QUESTION_WORDS;
@@ -170,11 +280,13 @@ export default class CaseResolutionAssistant extends LightningElement {
         this.firstNameError = this.validateFirstName();
         this.lastNameError = this.validateLastName();
         this.emailError = this.validateEmail();
+        this.productError = this.validateProduct();
         this.questionError = this.validateQuestion();
         return !(
             this.firstNameError ||
             this.lastNameError ||
             this.emailError ||
+            this.productError ||
             this.questionError
         );
     }
@@ -199,9 +311,23 @@ export default class CaseResolutionAssistant extends LightningElement {
             ? `${TEXTAREA_CLASS} cra-input--error`
             : TEXTAREA_CLASS;
     }
+    get productInputClass() {
+        return this.productError
+            ? 'cra-input cra-select cra-input--error'
+            : 'cra-input cra-select';
+    }
 
     get inputClass() {
         return this.classFor(STATE.INPUT);
+    }
+    get clarifyingClass() {
+        return this.classFor(STATE.CLARIFYING);
+    }
+    get clarificationClass() {
+        return this.classFor(STATE.CLARIFICATION);
+    }
+    get hasClarifications() {
+        return this.clarifications && this.clarifications.length > 0;
     }
     get loadingClass() {
         return this.classFor(STATE.LOADING);
@@ -250,7 +376,19 @@ export default class CaseResolutionAssistant extends LightningElement {
             : 'cra-hint cra-hint--hidden';
     }
 
-    async handleFindSolution() {
+    get sessionBannerClass() {
+        return this.isGuestSession
+            ? 'cra-session cra-session--guest'
+            : 'cra-session cra-session--member';
+    }
+
+    get clarifyWarningClass() {
+        return this.clarifyWarningMessage
+            ? 'cra-warning'
+            : 'cra-warning cra-warning--hidden';
+    }
+
+    async handleSubmit() {
         const isValid = this.validateAll();
         if (!isValid) {
             this.errorMessage = 'Please correct the highlighted fields before submitting.';
@@ -262,10 +400,10 @@ export default class CaseResolutionAssistant extends LightningElement {
         }
         this.questionHint = '';
         this.errorMessage = '';
-        this.currentState = STATE.LOADING;
+        this.currentState = STATE.CLARIFYING;
 
         try {
-            const result = await createSupportCase({
+            const result = await submitForClarification({
                 firstName: this.firstName,
                 lastName: this.lastName,
                 email: this.email,
@@ -274,8 +412,8 @@ export default class CaseResolutionAssistant extends LightningElement {
             });
             this.caseId = result.caseId;
             this.caseNumber = result.caseNumber;
-            this.pollAttempts = 0;
-            this.scheduleNextPoll();
+            this.clarifyAttempts = 0;
+            this.scheduleNextClarifyPoll();
         } catch (error) {
             this.errorMessage =
                 (error && error.body && error.body.message) ||
@@ -284,8 +422,171 @@ export default class CaseResolutionAssistant extends LightningElement {
         }
     }
 
+    scheduleNextClarifyPoll() {
+        this.clarifyTimeoutId = setTimeout(() => this.pollClarifyOnce(), POLL_INTERVAL_MS);
+    }
+
+    async pollClarifyOnce() {
+        this.clarifyAttempts += 1;
+        try {
+            const json = await getClarification({ caseId: this.caseId });
+            if (json) {
+                this._applyClarification(json);
+                return;
+            }
+        } catch (e) {
+            // Swallow transient errors and keep polling.
+        }
+
+        if (this.clarifyAttempts >= MAX_CLARIFY_ATTEMPTS) {
+            this.clarifiedQuestion = this.question;
+            this.clarifications = [];
+            this.clarifyWarningMessage = CLARIFY_AGENT_UNAVAILABLE_USER;
+            this.currentState = STATE.CLARIFICATION;
+            return;
+        }
+        this.scheduleNextClarifyPoll();
+    }
+
+    _applyClarification(jsonString) {
+        try {
+            const data = JSON.parse(jsonString);
+            this.clarifiedQuestion = data.cleanedQuestion || this.question;
+            this.clarifications = (data.clarifications || []).map((c, i) => ({
+                id: i,
+                question: c.question,
+                options: (c.options || []).map((opt, j) => ({
+                    id: `${i}-${j}`,
+                    text: opt,
+                    selected: false
+                })),
+                showOther: false,
+                otherText: ''
+            }));
+            if (data._error) {
+                this.clarifyWarningMessage = CLARIFY_AGENT_UNAVAILABLE_USER;
+            } else if (!this.clarifications.length) {
+                this.clarifyWarningMessage = CLARIFY_NO_MCQ_HINT;
+            } else {
+                this.clarifyWarningMessage = '';
+            }
+        } catch (e) {
+            this.clarifiedQuestion = this.question;
+            this.clarifications = [];
+            this.clarifyWarningMessage = CLARIFY_AGENT_UNAVAILABLE_USER;
+        }
+        this.currentState = STATE.CLARIFICATION;
+
+        // Belt-and-suspenders: LWC doesn't reliably push value changes into a
+        // hidden-then-shown <textarea> DOM node. renderedCallback also covers
+        // this, but a post-microtask sync guarantees the very first paint.
+        const captured = this.clarifiedQuestion;
+        // eslint-disable-next-line @lwc/lwc/no-async-operation
+        setTimeout(() => {
+            const el = this.template.querySelector('textarea[data-id="clarifiedQuestion"]');
+            if (el && el.value !== captured) {
+                el.value = captured;
+            }
+        }, 0);
+    }
+
+    handleClarifiedQuestionChange(event) {
+        this.clarifiedQuestion = event.target.value;
+    }
+
+    handleOptionChange(event) {
+        const clarId = parseInt(event.target.dataset.clarId, 10);
+        const optId  = event.target.dataset.optId;
+        const checked = event.target.checked;
+        this.clarifications = this.clarifications.map(clar => {
+            if (clar.id !== clarId) return clar;
+            return {
+                ...clar,
+                options: clar.options.map(opt =>
+                    opt.id === optId ? { ...opt, selected: checked } : opt
+                )
+            };
+        });
+    }
+
+    handleOtherToggle(event) {
+        const clarId  = parseInt(event.target.dataset.clarId, 10);
+        const checked = event.target.checked;
+        this.clarifications = this.clarifications.map(clar =>
+            clar.id !== clarId ? clar : { ...clar, showOther: checked, otherText: checked ? clar.otherText : '' }
+        );
+    }
+
+    handleOtherTextChange(event) {
+        const clarId = parseInt(event.target.dataset.clarId, 10);
+        this.clarifications = this.clarifications.map(clar =>
+            clar.id !== clarId ? clar : { ...clar, otherText: event.target.value }
+        );
+    }
+
+    handleBackToInput() {
+        if (this.clarifyTimeoutId) {
+            clearTimeout(this.clarifyTimeoutId);
+            this.clarifyTimeoutId = null;
+        }
+        this.currentState = STATE.INPUT;
+    }
+
+    async handleConfirm() {
+        const base = (this.clarifiedQuestion || this.question).trim();
+
+        // Build a rich MCQ context block for the AI agent so it knows what the user answered.
+        // Each line is "Question → answer(s)" for maximum clarity.
+        const mcqLines = [];
+        this.clarifications.forEach(clar => {
+            const selected = clar.options
+                .filter(opt => opt.selected)
+                .map(opt => opt.text);
+            if (clar.showOther && clar.otherText.trim()) {
+                selected.push(clar.otherText.trim());
+            }
+            if (selected.length > 0) {
+                mcqLines.push(`- ${clar.question}: ${selected.join(', ')}`);
+            }
+        });
+
+        // Full message sent to the AI agent — no length limit.
+        // MCQ answers are always included as a separate context block.
+        const agentMessage = mcqLines.length > 0
+            ? `${base}\n\nAdditional context provided by the user:\n${mcqLines.join('\n')}`
+            : base;
+
+        // Case.Subject is limited to 255 chars — truncate the base question only,
+        // MCQ context is NOT appended here (it travels separately via agentMessage).
+        const subjectQuestion = base.length <= 255 ? base : base.substring(0, 255);
+
+        this.errorMessage = '';
+        this.currentState = STATE.LOADING;
+
+        try {
+            await confirmQuestion({
+                caseId: this.caseId,
+                cleanedQuestion: subjectQuestion,
+                agentMessage: agentMessage
+            });
+            this.pollAttempts = 0;
+            this.scheduleNextPoll();
+        } catch (error) {
+            this.errorMessage =
+                (error && error.body && error.body.message) ||
+                'Sorry, something went wrong. Please try again.';
+            this.currentState = STATE.CLARIFICATION;
+        }
+    }
+
     scheduleNextPoll() {
         this.pollTimeoutId = setTimeout(() => this.pollOnce(), POLL_INTERVAL_MS);
+    }
+
+    _isAgentSystemError(text) {
+        const t = (text || '').trim();
+        return t.startsWith('[AGENT ERROR]') || t.startsWith('[EXCEPTION]')
+            || t.includes('invokeAgent returned');
     }
 
     async pollOnce() {
@@ -293,8 +594,13 @@ export default class CaseResolutionAssistant extends LightningElement {
         try {
             const description = await getRecommendation({ caseId: this.caseId });
             if (description) {
-                this.recommendation = description;
-                this.recommendationIsFallback = FALLBACK_MESSAGES.has(description);
+                if (this._isAgentSystemError(description)) {
+                    this.recommendation = RESOLUTION_AGENT_UNAVAILABLE_USER;
+                    this.recommendationIsFallback = true;
+                } else {
+                    this.recommendation = description;
+                    this.recommendationIsFallback = FALLBACK_MESSAGES.has(description);
+                }
                 this.currentState = STATE.RECOMMENDATION;
                 return;
             }
@@ -329,15 +635,16 @@ export default class CaseResolutionAssistant extends LightningElement {
     }
 
     handleReset() {
-        this.firstName = '';
-        this.lastName = '';
-        this.email = '';
+        this.firstName = this.profileFirstName || '';
+        this.lastName = this.profileLastName || '';
+        this.email = this.profileEmail || '';
         this.question = '';
         this.product = '';
         this.firstNameError = '';
         this.lastNameError = '';
         this.emailError = '';
         this.questionError = '';
+        this.productError = '';
         this.questionHint = '';
         this.recommendation = '';
         this.recommendationIsFallback = false;
@@ -351,14 +658,17 @@ export default class CaseResolutionAssistant extends LightningElement {
         }
         this._stopListening();
         this.micError = '';
+        this.showMicHint = true;
+        this.clarifyAttempts = 0;
+        if (this.clarifyTimeoutId) {
+            clearTimeout(this.clarifyTimeoutId);
+            this.clarifyTimeoutId = null;
+        }
+        this.clarifiedQuestion = '';
+        this.clarifications = [];
+        this.clarifyWarningMessage = '';
         this.currentState = STATE.INPUT;
-
-        // Force-clear DOM input/textarea/select values because LWC does not
-        // always re-render native form elements when their bound property resets.
-        // eslint-disable-next-line @lwc/lwc/no-template-children
-        this.template.querySelectorAll('input, textarea, select').forEach(el => {
-            el.value = '';
-        });
+        this._syncInputFormDom();
     }
 
     get micButtonClass() {
@@ -372,6 +682,7 @@ export default class CaseResolutionAssistant extends LightningElement {
     }
 
     handleMicToggle() {
+        this.showMicHint = false;
         if (this.isListening) {
             this._stopListening();
         } else {
@@ -463,6 +774,10 @@ export default class CaseResolutionAssistant extends LightningElement {
         if (this.pollTimeoutId) {
             clearTimeout(this.pollTimeoutId);
             this.pollTimeoutId = null;
+        }
+        if (this.clarifyTimeoutId) {
+            clearTimeout(this.clarifyTimeoutId);
+            this.clarifyTimeoutId = null;
         }
         this._stopListening();
     }

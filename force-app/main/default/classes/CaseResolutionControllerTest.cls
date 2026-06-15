@@ -252,34 +252,57 @@ private class CaseResolutionControllerTest {
 
     @IsTest
     static void resolveCase_closesCaseAndCopiesDescription() {
+        String agentQ = 'Product: Test\nQuestion: How do I verify close formatting?';
         Case c = new Case(
-            Origin      = 'Web',
-            Status      = 'New',
-            Subject     = 'Test',
-            Description = 'AI answer text'
+            Origin                        = 'Web',
+            Status                        = 'New',
+            Subject                       = 'How do I verify close formatting?',
+            GPTfy_Question__c             = agentQ,
+            Summary__c                    = '<p>AI answer text</p>',
+            Description                   = 'AI answer text',
+            AI_Clarification_Pending__c   = true
         );
         insert c;
 
         Test.startTest();
         CaseResolutionController.resolveCase(c.Id);
-        // Test.stopTest() synchronously delivers any queued platform events,
-        // which fires CaseResolvedTrigger and lets us assert its side effects.
         Test.stopTest();
 
-        Case closed = [SELECT Status, Resolution__c FROM Case WHERE Id = :c.Id];
+        Case closed = [
+            SELECT Status, Resolution__c, Description, GPTfy_Question__c
+            FROM Case
+            WHERE Id = :c.Id
+        ];
         System.assertEquals('Closed', closed.Status,
             'CaseResolvedTrigger should close the Case via system context');
-        System.assertEquals('AI answer text', closed.Resolution__c,
-            'Description should be copied verbatim into Resolution__c');
+        System.assertEquals('<p>AI answer text</p>', closed.Resolution__c,
+            'Resolution__c should keep the HTML answer from Summary__c');
+        System.assert(
+            closed.Description.contains(CaseDescriptionFormatter.QUESTION_LABEL),
+            'Closed Description should include Question label'
+        );
+        System.assert(
+            closed.Description.contains(CaseDescriptionFormatter.RESOLUTION_LABEL),
+            'Closed Description should include Resolution Provided label'
+        );
+        System.assert(
+            closed.Description.contains(agentQ),
+            'Closed Description should include the resolver question'
+        );
+        System.assert(
+            closed.Description.contains('AI answer text'),
+            'Closed Description should include the plain resolution text'
+        );
     }
 
     @IsTest
     static void resolveCase_sanitizesLowQualityDescriptionOnClose() {
         Case c = new Case(
-            Origin      = 'Web',
-            Status      = 'New',
-            Subject     = 'Test',
-            Description = 'What was that?'
+            Origin                        = 'Web',
+            Status                        = 'New',
+            Subject                       = 'Test',
+            Description                   = 'What was that?',
+            AI_Clarification_Pending__c   = true
         );
         insert c;
 
@@ -287,12 +310,16 @@ private class CaseResolutionControllerTest {
         CaseResolutionController.resolveCase(c.Id);
         Test.stopTest();
 
-        Case closed = [SELECT Status, Resolution__c FROM Case WHERE Id = :c.Id];
+        Case closed = [SELECT Status, Resolution__c, Description FROM Case WHERE Id = :c.Id];
         System.assertEquals('Closed', closed.Status);
         System.assertEquals(
             CaseResolutionController.NO_ANSWER_MESSAGE,
             closed.Resolution__c,
             'Low-quality Description should not be stored on Resolution__c'
+        );
+        System.assert(
+            closed.Description.contains(CaseDescriptionFormatter.RESOLUTION_LABEL),
+            'Closed Description should still use the formatted layout'
         );
     }
 
@@ -345,5 +372,20 @@ private class CaseResolutionControllerTest {
             System.assert(String.isNotBlank(entry.get('value')),
                 'Each option must have a non-blank value');
         }
+    }
+
+    @IsTest
+    static void getPortalUserContext_returnsRunningUserFields() {
+        Test.startTest();
+        Map<String, String> ctx = CaseResolutionController.getPortalUserContext();
+        Test.stopTest();
+
+        System.assertNotEquals(null, ctx.get('userType'));
+        System.assertEquals('false', ctx.get('isGuest'),
+            'Test runs as system user, not Site Guest');
+        System.assert(String.isNotBlank(ctx.get('displayName')));
+        System.assertNotEquals(null, ctx.get('firstName'));
+        System.assertNotEquals(null, ctx.get('lastName'));
+        System.assertNotEquals(null, ctx.get('email'));
     }
 }

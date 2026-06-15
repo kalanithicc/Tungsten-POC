@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>AI_Clarification_Pending__c</fullName>
+    <description>True while the case is awaiting question clarification. CaseAIAgentTrigger skips AI resolution on insert when this is true. CaseConfirmTrigger clears it to false on confirmation, which fires the AI resolution.</description>
+    <defaultValue>false</defaultValue>
+    <label>AI Clarification Pending</label>
+    <type>Checkbox</type>
+</CustomField>

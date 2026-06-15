@@ -254,4 +254,20 @@
         <readable>true</readable>
         <editable>true</editable>
     </fieldPermissions>
+    <fieldPermissions>
+        <field>Case.AI_Clarification_Pending__c</field>
+        <readable>true</readable>
+        <editable>true</editable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <field>Case.KB_Article_Link__c</field>
+        <readable>true</readable>
+        <editable>true</editable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <field>Case.KB_Candidates__c</field>
+        <readable>true</readable>
+        <editable>true</editable>
+    </fieldPermissions>
+
 </PermissionSet>

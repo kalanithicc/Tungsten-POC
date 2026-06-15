@@ -106,9 +106,7 @@ public without sharing class CaseResolutionController {
      * @param lastName   Guest's last name  (becomes part of SuppliedName)
      * @param email      Guest's email      (stored on SuppliedEmail)
      * @param subject    The user's question (stored on Subject; truncated to 255 chars)
-     * @param product    Optional product picklist value (stored on Product__c).
-     *                   Pass null/blank if the guest did not pick one; the GPTfy
-     *                   prompt will then search KB across all products.
+     * @param product    Required product picklist value (stored on Product__c).
      * @return Map with keys 'caseId' (the new record's Id) and
      *         'caseNumber' (the auto-generated human-readable number).
      */
@@ -176,15 +174,24 @@ public without sharing class CaseResolutionController {
                 return null;
             }
             Case c = [
-                SELECT Description
+                SELECT Description, Summary__c, GPTfy_Question__c
                 FROM Case
                 WHERE Id = :caseId
                 LIMIT 1
             ];
-            if (String.isBlank(c.Description)) {
+            // Summary__c holds the full HTML response for rich rendering in the LWC.
+            // Fall back to Description (plain text) if Summary__c has not been written yet
+            // (e.g. very old cases or error paths that only write Description).
+            String content = String.isNotBlank(c.Summary__c) ? c.Summary__c : c.Description;
+            if (String.isBlank(content) && String.isNotBlank(c.GPTfy_Question__c)
+                && (c.GPTfy_Question__c.startsWith('[AGENT ERROR]')
+                    || c.GPTfy_Question__c.startsWith('[EXCEPTION]'))) {
+                content = c.GPTfy_Question__c;
+            }
+            if (String.isBlank(content)) {
                 return null;
             }
-            return sanitizeRecommendation(c.Description);
+            return sanitizeRecommendation(content);
         } catch (Exception e) {
             return null;
         }
@@ -221,9 +228,12 @@ public without sharing class CaseResolutionController {
         if (String.isBlank(text)) {
             return text;
         }
-        // If the agent already returned HTML, leave it alone.
+        // If the agent already returned HTML, clean up redundant blank lines between
+        // block elements. white-space is an inherited CSS property; blank lines
+        // between tags render as extra empty rows in lightning-formatted-rich-text
+        // unless collapsed here.
         if (text.trim().startsWith('<')) {
-            return text;
+            return text.replaceAll('>[ \\t]*\\n{2,}[ \\t]*<', '>\n<');
         }
         // Normalise Windows-style line endings.
         String normalised = text.replace('\r\n', '\n').replace('\r', '\n');
@@ -246,8 +256,11 @@ public without sharing class CaseResolutionController {
             if (String.isBlank(trimmed)) {
                 continue;
             }
-            // Within a paragraph, single newlines become <br/>.
-            String withBreaks = trimmed.replace('\n', '<br/>');
+            // Convert **bold** markdown to <strong> so lightning-formatted-rich-text renders it.
+            String converted = trimmed.replaceAll('\\*\\*(.+?)\\*\\*', '<strong>$1</strong>');
+            // Within a paragraph, single newlines become <br/> so list items and steps
+            // each appear on their own line instead of collapsing into a wall of text.
+            String withBreaks = converted.replace('\n', '<br/>');
             htmlParagraphs.add('<p>' + withBreaks + '</p>');
         }
         return String.join(htmlParagraphs, '');
@@ -310,6 +323,231 @@ public without sharing class CaseResolutionController {
             );
         }
     }
+
+    // ─── Question Clarification flow ─────────────────────────────────────────
+
+    /**
+     * Creates a Case in "clarification pending" mode and enqueues the
+     * Question Clarifier prompt. The LWC then polls getClarification() until
+     * Case.Clarification_Response__c is populated.
+     *
+     * Clarification_Pending__c = true prevents CaseAIAgentTrigger from firing
+     * the AI resolution on insert — the AI fires only after the guest confirms.
+     */
+    @AuraEnabled
+    public static Map<String, String> submitForClarification(
+        String firstName,
+        String lastName,
+        String email,
+        String subject,
+        String product
+    ) {
+        try {
+            if (String.isBlank(product)) {
+                throw new AuraHandledException('Please select a product.');
+            }
+
+            String safeSubject = subject == null ? '' : subject;
+            if (safeSubject.length() > SUBJECT_MAX_LENGTH) {
+                safeSubject = safeSubject.substring(0, SUBJECT_MAX_LENGTH);
+            }
+
+            String suppliedName = String.join(
+                new List<String>{
+                    firstName == null ? '' : firstName,
+                    lastName  == null ? '' : lastName
+                },
+                ' '
+            ).trim();
+
+            Case c = new Case(
+                Origin                      = 'Web',
+                Status                      = 'New',
+                Priority                    = 'Medium',
+                Subject                     = safeSubject,
+                SuppliedName                = suppliedName,
+                SuppliedEmail               = email,
+                Product__c                  = product.trim(),
+                AI_Clarification_Pending__c = true
+            );
+            insert c;
+
+            Case requeried = [
+                SELECT Id, CaseNumber
+                FROM Case
+                WHERE Id = :c.Id
+                LIMIT 1
+            ];
+
+            // Enqueue directly — Guest User has sufficient GPTfy package permissions
+            // to invoke agents. Running as Automated Process (via Platform Event)
+            // does NOT have the correct GPTfy agent context.
+            System.enqueueJob(new CaseQuestionClarifierAgentService(
+                requeried.Id,
+                safeSubject,
+                product.trim()
+            ));
+
+            return new Map<String, String>{
+                'caseId'     => requeried.Id,
+                'caseNumber' => requeried.CaseNumber
+            };
+        } catch (Exception e) {
+            throw new AuraHandledException('Unable to submit question: ' + e.getMessage());
+        }
+    }
+
+    /**
+     * Polled by the LWC every 2.5 s during the CLARIFYING state.
+     *
+     * Strategy:
+     *   1. Check Case.Intent_Analysis__c (written by QuestionClarifierAction).
+     *      If it contains a non-empty cleanedQuestion, return it immediately.
+     *   2. If Intent_Analysis__c is blank OR cleanedQuestion is empty, query
+     *      ccai__AI_Response__c directly for the latest Question Clarifier
+     *      response tied to this Case — this is the approach the user suggested
+     *      to guarantee we get the actual prompt output regardless of the
+     *      Prompt Action timing.
+     *   3. Parse and cache the result in Intent_Analysis__c, then return it.
+     *   4. Return null if no response has arrived yet (caller will keep polling).
+     */
+    @AuraEnabled
+    public static String getClarification(Id caseId) {
+        try {
+            if (caseId == null) {
+                return null;
+            }
+
+            // ── Step 1: return cached JSON only when MCQs are present ──
+            Case c = [
+                SELECT Intent_Analysis__c
+                FROM Case
+                WHERE Id = :caseId
+                LIMIT 1
+            ];
+            if (QuestionClarifierAction.isSuccessfulClarificationJson(c.Intent_Analysis__c)) {
+                return c.Intent_Analysis__c;
+            }
+
+            // ── Step 2: recover from GPTfy Security Audit (PII Added field) ──
+            String auditText = QuestionClarifierAction.loadClarifierAuditText(caseId);
+            String jsonResult = QuestionClarifierAction.parseClarifierResponse(auditText);
+            if (String.isNotBlank(jsonResult)) {
+                try {
+                    update new Case(Id = caseId, Intent_Analysis__c = jsonResult);
+                } catch (Exception dmlEx) {
+                    System.debug(LoggingLevel.WARN,
+                        'getClarification: could not cache JSON on Case ' + caseId +
+                        ' — ' + dmlEx.getMessage());
+                }
+                return jsonResult;
+            }
+
+            // ── Step 3: return fallback JSON so LWC can show friendly warning ──
+            if (String.isNotBlank(c.Intent_Analysis__c)) {
+                try {
+                    Map<String, Object> parsed =
+                        (Map<String, Object>) JSON.deserializeUntyped(c.Intent_Analysis__c);
+                    if (String.isNotBlank((String) parsed.get('cleanedQuestion'))) {
+                        return c.Intent_Analysis__c;
+                    }
+                } catch (Exception parseEx) {
+                    // ignore
+                }
+            }
+
+            return null;
+        } catch (Exception e) {
+            System.debug(LoggingLevel.ERROR,
+                'getClarification: exception for Case ' + caseId +
+                ' — ' + e.getMessage());
+            return null;
+        }
+    }
+
+    /**
+     * Called when the guest clicks "Confirm & Find Solution".
+     * Publishes Case_Clarification_Confirmed__e; CaseConfirmTrigger then
+     * updates Case.Subject and clears Clarification_Pending__c, which
+     * causes CaseAIAgentTrigger (after update) to fire the AI resolution.
+     *
+     * @param caseId          The Case to update.
+     * @param cleanedQuestion The confirmed question (may include appended MCQ context).
+     */
+    @AuraEnabled
+    public static void confirmQuestion(Id caseId, String cleanedQuestion, String agentMessage) {
+        if (caseId == null) {
+            throw new AuraHandledException('Case Id is required.');
+        }
+        try {
+            // subjectQ — goes into Case.Subject (max 255 chars, Salesforce field limit)
+            String subjectQ = String.isBlank(cleanedQuestion) ? '' : cleanedQuestion.trim();
+            if (subjectQ.length() > SUBJECT_MAX_LENGTH) {
+                subjectQ = subjectQ.substring(0, SUBJECT_MAX_LENGTH);
+            }
+
+            // agentQ — sent to the Case Resolve Agent. This is the FULL cleaned question
+            // PLUS any MCQ context the user selected. No 255-char truncation here — the
+            // agent benefits from every detail. Fall back to subjectQ if blank.
+            String agentQ = String.isBlank(agentMessage) ? subjectQ : agentMessage.trim();
+
+            // Enqueue directly — Guest User has sufficient GPTfy package permissions.
+            System.enqueueJob(new CaseAgentResolutionService(caseId, agentQ));
+
+            // Publish the event so CaseConfirmTrigger can update Case.Subject and clear
+            // AI_Clarification_Pending__c in system context (Guest User cannot edit Cases).
+            Case_Clarification_Confirmed__e evt = new Case_Clarification_Confirmed__e(
+                CaseId__c          = String.valueOf(caseId),
+                CleanedQuestion__c = subjectQ
+            );
+            Database.SaveResult sr = EventBus.publish(evt);
+            if (!sr.isSuccess()) {
+                String firstError = sr.getErrors().isEmpty()
+                    ? 'Unknown error publishing Case_Clarification_Confirmed__e'
+                    : sr.getErrors()[0].getMessage();
+                throw new AuraHandledException('Unable to confirm question: ' + firstError);
+            }
+        } catch (AuraHandledException ahe) {
+            throw ahe;
+        } catch (Exception e) {
+            throw new AuraHandledException('Unable to confirm question: ' + e.getMessage());
+        }
+    }
+
+    // ─── Portal session / profile prefill ─────────────────────────────────────
+
+    /**
+     * Returns the current Experience Cloud session context for the LWC.
+     * Logged-in community members get profile name + contact fields for prefill.
+     * Guest/public sessions return isGuest=true with no profile fields.
+     */
+    @AuraEnabled(cacheable=true)
+    public static Map<String, String> getPortalUserContext() {
+        String userType = UserInfo.getUserType();
+        Boolean isGuest = userType == 'Guest';
+
+        Map<String, String> result = new Map<String, String>{
+            'userType'    => userType,
+            'isGuest'     => String.valueOf(isGuest),
+            'displayName' => isGuest ? '' : UserInfo.getName()
+        };
+
+        if (!isGuest) {
+            User u = [
+                SELECT FirstName, LastName, Email
+                FROM User
+                WHERE Id = :UserInfo.getUserId()
+                LIMIT 1
+            ];
+            result.put('firstName', u.FirstName == null ? '' : u.FirstName);
+            result.put('lastName',  u.LastName  == null ? '' : u.LastName);
+            result.put('email',     u.Email     == null ? '' : u.Email);
+        }
+
+        return result;
+    }
+
+    // ─── Product picklist ─────────────────────────────────────────────────────
 
     /**
      * Returns the active picklist values for Case.Product__c so the LWC can

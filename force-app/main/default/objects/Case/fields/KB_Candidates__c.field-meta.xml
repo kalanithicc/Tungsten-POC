@@ -1,12 +1,12 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
     <fullName>KB_Candidates__c</fullName>
-    <description>Serialized existing Knowledge article candidates for the GPTfy KB Creation Prompt. Staging field — cleared after the prompt action runs.</description>
-    <label>KB Candidates</label>
+    <description>Dual-purpose staging field. SKIP path: written by KbMatchAgentService with the KB Update Scope analysis (why the resolve agent missed the article, whether it needs updating, and what to add). CREATE path: passed as a merge field to the GPTfy KB Creation Prompt (will be blank on the create path so the prompt creates from case description alone).</description>
+    <label>KB Update Scope</label>
     <length>131072</length>
     <trackFeedHistory>false</trackFeedHistory>
     <trackHistory>false</trackHistory>
     <trackTrending>false</trackTrending>
     <type>LongTextArea</type>
-    <visibleLines>10</visibleLines>
+    <visibleLines>8</visibleLines>
 </CustomField>

@@ -188,6 +188,37 @@
     display: none !important;
 }
 
+.cra-session {
+    padding: 0.65rem 1rem;
+    border-radius: 8px;
+    font-size: 0.875rem;
+    line-height: 1.4;
+    margin-bottom: 1.25rem;
+}
+.cra-session--member {
+    background: #f0fff4;
+    border-left: 4px solid #38a169;
+    color: #276749;
+}
+.cra-session--guest {
+    background: #fffbeb;
+    border-left: 4px solid #f59e0b;
+    color: #92400e;
+}
+
+.cra-warning {
+    color: #92400e;
+    padding: 0.75rem 1rem;
+    background: #fffbeb;
+    border-left: 4px solid #f59e0b;
+    border-radius: 4px;
+    font-size: 0.875rem;
+    line-height: 1.5;
+}
+.cra-warning--hidden {
+    display: none !important;
+}
+
 .cra-loading {
     display: flex;
     flex-direction: column;
@@ -251,7 +282,10 @@
 .cra-card-body {
     color: #2d3748;
     line-height: 1.6;
-    white-space: pre-wrap;
+    font-size: 0.9375rem;
+    /* Do NOT set white-space here. white-space is an inherited CSS property;
+       setting it on this container propagates into lightning-formatted-rich-text's
+       shadow DOM and causes blank lines in the HTML to render as visible empty rows. */
     word-wrap: break-word;
 }
 .cra-card-question {
@@ -317,48 +351,121 @@
     background: #3182ce;
 }
 
+/* ── Clarification MCQ state ── */
+.cra-clar-section {
+    border-top: 1px solid #e2e8f0;
+    padding-top: 1rem;
+    display: flex;
+    flex-direction: column;
+    gap: 1.25rem;
+}
+.cra-clar-heading {
+    font-size: 0.9375rem;
+    font-weight: 600;
+    color: #2d3748;
+    margin: 0;
+}
+.cra-clar-group {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+.cra-clar-question {
+    font-size: 0.9rem;
+    font-weight: 500;
+    color: #4a5568;
+    margin: 0;
+}
+.cra-clar-options {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+}
+.cra-clar-option {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.375rem 0.75rem;
+    border: 1.5px solid #cbd5e0;
+    border-radius: 20px;
+    font-size: 0.875rem;
+    color: #4a5568;
+    cursor: pointer;
+    transition: border-color 0.15s, background 0.15s, color 0.15s;
+    user-select: none;
+}
+.cra-clar-option:hover {
+    border-color: #3182ce;
+    color: #2c5282;
+    background: #ebf8ff;
+}
+.cra-clar-option input[type="checkbox"] {
+    width: 14px;
+    height: 14px;
+    accent-color: #3182ce;
+    cursor: pointer;
+    flex-shrink: 0;
+}
+.cra-clar-other-input {
+    margin-top: 0.25rem;
+    padding: 0.5rem 0.75rem;
+    font-size: 0.875rem;
+    border-radius: 8px;
+}
+
 /* ── Speech-to-text mic icon inside textarea ── */
 .cra-textarea-wrapper {
     position: relative;
     width: 100%;
 }
 .cra-textarea-wrapper .cra-textarea {
-    padding-right: 2.75rem;
+    padding-right: 3rem;
 }
 .cra-mic-btn {
     position: absolute;
     bottom: 0.5rem;
     right: 0.5rem;
-    width: 2rem;
-    height: 2rem;
+    width: 2.25rem;
+    height: 2.25rem;
     border-radius: 50%;
-    border: none;
-    background: transparent;
-    color: #a0aec0;
+    border: 1.5px solid #bee3f8;
+    background: #ebf8ff;
+    color: #3182ce;
     cursor: pointer;
     display: flex;
     align-items: center;
     justify-content: center;
     padding: 0;
-    transition: color 0.15s, background 0.15s;
+    transition: color 0.15s, background 0.15s, border-color 0.15s, box-shadow 0.15s;
     flex-shrink: 0;
+    box-shadow: 0 1px 4px rgba(49, 130, 206, 0.18);
 }
 .cra-mic-btn:hover {
-    color: #3182ce;
-    background: #ebf8ff;
+    background: #3182ce;
+    color: #ffffff;
+    border-color: #3182ce;
+    box-shadow: 0 2px 8px rgba(49, 130, 206, 0.35);
 }
 .cra-mic-btn--listening {
-    color: #c53030;
-    background: #fff5f5;
+    color: #ffffff;
+    background: #c53030;
+    border-color: #c53030;
+    box-shadow: 0 0 0 4px rgba(197, 48, 48, 0.2);
+    animation: cra-mic-glow 1.2s ease-in-out infinite;
 }
 .cra-mic-btn--listening:hover {
-    background: #fed7d7;
+    background: #9b2c2c;
+    border-color: #9b2c2c;
+}
+@keyframes cra-mic-glow {
+    0%, 100% { box-shadow: 0 0 0 3px rgba(197, 48, 48, 0.2); }
+    50%       { box-shadow: 0 0 0 7px rgba(197, 48, 48, 0.08); }
 }
 .cra-mic-dot {
     width: 12px;
     height: 12px;
     border-radius: 50%;
-    background: #c53030;
+    background: #ffffff;
     animation: cra-pulse 0.9s ease-in-out infinite;
 }
 @keyframes cra-pulse {
@@ -387,6 +494,30 @@
     color: #718096;
     font-style: italic;
     font-weight: 400;
+}
+
+/* ── Voice-input onboarding hint ── */
+.cra-voice-hint {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.5rem;
+    padding: 0.55rem 0.85rem;
+    background: #ebf8ff;
+    border: 1px solid #bee3f8;
+    border-radius: 8px;
+    font-size: 0.8125rem;
+    color: #2c5282;
+    line-height: 1.45;
+    animation: cra-fadein 0.5s ease;
+}
+.cra-voice-hint-icon {
+    font-size: 1rem;
+    flex-shrink: 0;
+    margin-top: 0.05rem;
+}
+@keyframes cra-fadein {
+    from { opacity: 0; transform: translateY(-4px); }
+    to   { opacity: 1; transform: translateY(0); }
 }
 
 @media (max-width: 600px) {

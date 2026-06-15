@@ -99,14 +99,6 @@ private class KbArticleBuilderActionTest {
             WHERE CaseId = :c.Id
         ];
         System.assertEquals(1, links.size(), 'One CaseArticle link must be created');
-
-        Case refreshedCase = [
-            SELECT KB_Candidates__c
-            FROM Case
-            WHERE Id = :c.Id
-        ];
-        System.assertEquals(null, refreshedCase.KB_Candidates__c,
-            'KB_Candidates__c should be cleared after processing');
     }
 
     @IsTest
@@ -125,9 +117,6 @@ private class KbArticleBuilderActionTest {
             Subject = 'KB article builder test — UPDATE path'
         );
         insert c;
-
-        c.KB_Candidates__c = 'CANDIDATE_1\nId: ' + existing.Id;
-        update c;
 
         String updateResponse = UPDATE_RESPONSE_PREFIX.replace(
             '%ARTICLE_ID%', String.valueOf(existing.Id));

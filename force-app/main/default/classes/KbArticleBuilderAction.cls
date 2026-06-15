@@ -9,21 +9,20 @@
  * GPTfy calls invokeApex() with the ccai__AI_Response__c record after the
  * LLM returns its output. This method reads the response text and the
  * originating Case Id, then:
- *   1. Parses Action (CREATE/UPDATE), ArticleId, Question, and Answer
- *   2. Creates a new draft article OR updates an existing one
+ *   1. Parses Action, Question, and Answer from the response
+ *   2. Always creates a new draft article (UPDATE instructions are ignored by policy)
  *   3. Links the article back to the Case via CaseArticle
- *   4. Clears Case.KB_Candidates__c staging field
+ *   4. Writes Case.KB_Article_Link__c with a clickable URL
  *
  * Expected prompt response format:
- *   Action: CREATE or UPDATE
- *   ArticleId: [Knowledge__kav Id if UPDATE, blank if CREATE]
+ *   Action: CREATE
  *   Question: "[original customer question, exactly as submitted]"
  *   Answer: "[enhanced professional answer]"
  */
 global without sharing class KbArticleBuilderAction implements ccai.AIPromptActionInterface {
 
     private static final String ACTION_CREATE = 'CREATE';
-    private static final String ACTION_UPDATE = 'UPDATE';
+    private static final String ACTION_UPDATE = 'UPDATE'; // kept to detect and log ignored UPDATE instructions
 
     // ─── Parsed prompt result ──────────────────────────────────────────────────
 
@@ -81,22 +80,16 @@ global without sharing class KbArticleBuilderAction implements ccai.AIPromptActi
             }
         }
 
-        Id knowledgeArticleId = null;
+        // Policy: always CREATE — UPDATE is disabled. Log and ignore if prompt returns UPDATE.
         if (ACTION_UPDATE.equalsIgnoreCase(result.action) && String.isNotBlank(result.articleId)) {
-            knowledgeArticleId = updateKnowledgeArticle(result);
-            if (knowledgeArticleId == null) {
-                System.debug(LoggingLevel.WARN,
-                    'KbArticleBuilderAction: UPDATE failed for ArticleId ' + result.articleId +
-                    ' — falling back to CREATE.');
-                knowledgeArticleId = createKnowledgeArticle(result);
-            }
-        } else {
-            knowledgeArticleId = createKnowledgeArticle(result);
+            System.debug(LoggingLevel.INFO,
+                'KbArticleBuilderAction: UPDATE instruction ignored (policy) — creating new article.');
         }
+        Id knowledgeArticleId = createKnowledgeArticle(result);
 
         if (caseId != null && knowledgeArticleId != null) {
             linkArticleToCase(caseId, knowledgeArticleId);
-            clearPromptContext(caseId);
+            writeKbArticleLink(caseId, knowledgeArticleId);
         }
     }
 
@@ -161,72 +154,12 @@ global without sharing class KbArticleBuilderAction implements ccai.AIPromptActi
         return refreshed.KnowledgeArticleId;
     }
 
-    private static Id updateKnowledgeArticle(PromptResult result) {
-        Id kavId;
-        try {
-            kavId = Id.valueOf(result.articleId);
-        } catch (Exception e) {
-            System.debug(LoggingLevel.WARN,
-                'KbArticleBuilderAction: invalid ArticleId "' + result.articleId + '"');
-            return null;
-        }
-
-        List<Knowledge__kav> existing = [
-            SELECT Id, KnowledgeArticleId, PublishStatus, Title
-            FROM Knowledge__kav
-            WHERE Id = :kavId
-            LIMIT 1
-        ];
-        if (existing.isEmpty()) {
-            System.debug(LoggingLevel.WARN,
-                'KbArticleBuilderAction: no Knowledge__kav found for Id ' + kavId);
-            return null;
-        }
-
-        Knowledge__kav current = existing[0];
-        String title = buildTitle(result.question);
-        Id draftKavId = current.Id;
-
-        if (current.PublishStatus == 'Online') {
-            try {
-                String draftKavIdStr = KbManagement.PublishingService.editOnlineArticle(
-                    String.valueOf(current.KnowledgeArticleId),
-                    false
-                );
-                draftKavId = Id.valueOf(draftKavIdStr);
-            } catch (Exception e) {
-                System.debug(LoggingLevel.ERROR,
-                    'KbArticleBuilderAction: editOnlineArticle failed — ' + e.getMessage());
-                return null;
-            }
-        } else if (current.PublishStatus != 'Draft') {
-            System.debug(LoggingLevel.WARN,
-                'KbArticleBuilderAction: unsupported PublishStatus "' + current.PublishStatus +
-                '" for article ' + kavId);
-            return null;
-        }
-
-        try {
-            update new Knowledge__kav(
-                Id            = draftKavId,
-                Title         = title,
-                Resolution__c = result.answer
-            );
-        } catch (DmlException e) {
-            System.debug(LoggingLevel.ERROR,
-                'KbArticleBuilderAction: failed to update Knowledge article — ' + e.getMessage());
-            return null;
-        }
-
-        return current.KnowledgeArticleId;
-    }
-
     private static String buildTitle(String question) {
         String title = String.isBlank(question) ? 'KB Article' : question;
         return title.length() > 255 ? title.substring(0, 255) : title;
     }
 
-    // ─── Case linkage and cleanup ────────────────────────────────────────────────
+    // ─── Case linkage ────────────────────────────────────────────────────────────
 
     private static void linkArticleToCase(Id caseId, Id knowledgeArticleId) {
         try {
@@ -240,12 +173,35 @@ global without sharing class KbArticleBuilderAction implements ccai.AIPromptActi
         }
     }
 
-    private static void clearPromptContext(Id caseId) {
+    /**
+     * Writes a direct Lightning URL to Case.KB_Article_Link__c so agents can
+     * click straight through to the Knowledge article that was created/updated.
+     * Resolves KnowledgeArticle.Id → Knowledge__kav.Id for the URL path.
+     */
+    @TestVisible
+    static void writeKbArticleLink(Id caseId, Id knowledgeArticleId) {
+        if (caseId == null || knowledgeArticleId == null) {
+            return;
+        }
         try {
-            KbPromptContextService.clearForCase(caseId);
-        } catch (DmlException e) {
+            List<Knowledge__kav> kavList = [
+                SELECT Id
+                FROM Knowledge__kav
+                WHERE KnowledgeArticleId = :knowledgeArticleId
+                  AND PublishStatus IN ('Draft', 'Online')
+                ORDER BY LastModifiedDate DESC
+                LIMIT 1
+            ];
+            if (kavList.isEmpty()) {
+                return;
+            }
+            String baseUrl = URL.getOrgDomainUrl().toExternalForm();
+            String url = baseUrl + '/lightning/r/Knowledge__kav/' + kavList[0].Id + '/view';
+            update new Case(Id = caseId, KB_Article_Link__c = url);
+        } catch (Exception e) {
             System.debug(LoggingLevel.WARN,
-                'KbArticleBuilderAction: failed to clear KB prompt context — ' + e.getMessage());
+                'KbArticleBuilderAction: could not write KB_Article_Link__c for Case ' +
+                caseId + ' — ' + e.getMessage());
         }
     }
 

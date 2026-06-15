@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomObject xmlns="http://soap.sforce.com/2006/04/metadata">
+    <deploymentStatus>Deployed</deploymentStatus>
+    <description>Published by CaseResolutionController.confirmQuestion() when the guest confirms the clarified question. CaseConfirmTrigger handles the event and updates Case.Subject + clears AI_Clarification_Pending__c, which fires the AI resolution path.</description>
+    <label>Case Clarification Confirmed</label>
+    <pluralLabel>Case Clarification Confirmed</pluralLabel>
+    <publishBehavior>PublishImmediately</publishBehavior>
+</CustomObject>
