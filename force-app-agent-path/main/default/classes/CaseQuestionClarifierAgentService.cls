@@ -54,8 +54,9 @@ public without sharing class CaseQuestionClarifierAgentService
 
             ccai.AIAgenticWebService.RequestWrapper request =
                 new ccai.AIAgenticWebService.RequestWrapper();
-            request.agentName   = AGENT_DEVELOPER_NAME;
-            request.userMessage = userMessage;
+            request.agentName     = AGENT_DEVELOPER_NAME;
+            request.userMessage   = userMessage;
+            request.userContextId = String.valueOf(caseId);
 
             ccai.AIAgenticWebService.ResponseWrapper response =
                 ccai.AIAgenticUtility.invokeAgent(request);

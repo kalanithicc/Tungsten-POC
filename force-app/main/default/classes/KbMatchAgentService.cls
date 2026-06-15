@@ -47,8 +47,9 @@ public without sharing class KbMatchAgentService implements Queueable, Database.
 
         try {
             ccai.AIAgenticWebService.RequestWrapper req = new ccai.AIAgenticWebService.RequestWrapper();
-            req.agentName   = AGENT_NAME;
-            req.userMessage = userMessage;
+            req.agentName     = AGENT_NAME;
+            req.userMessage   = userMessage;
+            req.userContextId = String.valueOf(caseId);
 
             ccai.AIAgenticWebService.ResponseWrapper resp = ccai.AIAgenticUtility.invokeAgent(req);
 

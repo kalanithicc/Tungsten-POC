@@ -101,25 +101,39 @@ global without sharing class QuestionClarifierAction implements ccai.AIPromptAct
             return null;
         }
 
-        Case c = [
-            SELECT CreatedDate
-            FROM Case
-            WHERE Id = :caseId
-            LIMIT 1
-        ];
-        Datetime windowStart = c.CreatedDate.addSeconds(-10);
+        String contextId = String.valueOf(caseId);
 
         List<ccai__AI_Response__c> responses = [
             SELECT ccai__AI_Processed_Data_PII_Added__c,
                    ccai__Message__c,
                    ccai__Data_Original__c
             FROM ccai__AI_Response__c
-            WHERE ccai__Agent_Name__c = :CLARIFIER_AGENT_AUDIT_NAME
-              AND CreatedById          = :UserInfo.getUserId()
-              AND CreatedDate          >= :windowStart
-            ORDER BY CreatedDate DESC
+            WHERE ccai__User_Context_Id__c = :contextId
+            ORDER BY LastModifiedDate DESC
             LIMIT 1
         ];
+
+        if (responses.isEmpty()) {
+            Case c = [
+                SELECT CreatedDate
+                FROM Case
+                WHERE Id = :caseId
+                LIMIT 1
+            ];
+            Datetime windowStart = c.CreatedDate.addSeconds(-10);
+
+            responses = [
+                SELECT ccai__AI_Processed_Data_PII_Added__c,
+                       ccai__Message__c,
+                       ccai__Data_Original__c
+                FROM ccai__AI_Response__c
+                WHERE ccai__Agent_Name__c = :CLARIFIER_AGENT_AUDIT_NAME
+                  AND CreatedById          = :UserInfo.getUserId()
+                  AND CreatedDate          >= :windowStart
+                ORDER BY CreatedDate DESC
+                LIMIT 1
+            ];
+        }
 
         if (responses.isEmpty()) {
             return null;

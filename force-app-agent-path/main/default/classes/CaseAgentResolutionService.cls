@@ -25,8 +25,9 @@ public without sharing class CaseAgentResolutionService implements Queueable, Da
     public void execute(QueueableContext ctx) {
         try {
             ccai.AIAgenticWebService.RequestWrapper request = new ccai.AIAgenticWebService.RequestWrapper();
-            request.agentName   = AGENT_DEVELOPER_NAME;
-            request.userMessage = cleanSubject(subject);
+            request.agentName     = AGENT_DEVELOPER_NAME;
+            request.userMessage   = cleanSubject(subject);
+            request.userContextId = String.valueOf(caseId);
 
             ccai.AIAgenticWebService.ResponseWrapper response =
                 ccai.AIAgenticUtility.invokeAgent(request);
